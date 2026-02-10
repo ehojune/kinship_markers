@@ -232,9 +232,9 @@ echo "Start: $(date)"
 echo "Samples: {len(samples)}"
 echo "BED: {bed_path}"
 
-# Step 1: Extract VCF subset
+# Step 1: Copy Aginglab generated VCF
 echo ""
-echo "[1/4] Extracting VCF subset..."
+echo "[1/4] Copy Aginglab generated VCF"
 bcftools view -S {sample_file} -R {bed_path} {joint_vcf} -Oz -o {vcf_out}
 tabix -p vcf {vcf_out}
 
@@ -246,7 +246,7 @@ echo "  SNP sites: $SNPS"
 # Step 2: VCF -> PLINK binary
 echo ""
 echo "[2/4] Converting to PLINK format..."
-plink --vcf {vcf_out} \\
+plink --vcf /BiO/Access/ehojune/kinship/Kinship_AgingLab_VCFs/merged_hj/{name}/merged.vcf.gz \\
       --make-bed \\
       --out {plink_prefix} \\
       --allow-extra-chr \\
