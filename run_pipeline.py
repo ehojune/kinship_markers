@@ -92,6 +92,19 @@ RELATIONSHIP_LABELS = {
     'Unrelated': 'Unrelated\n(0)'
 }
 
+COMPARISON_MARKERS = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K']
+
+
+def collapse_spouse_to_others(df):
+    df = df.copy()
+    df['Relationship'] = df['Relationship'].replace({'Spouse': 'Unrelated'})
+    return df
+
+
+def filter_comparison_markers(marker_list):
+    selected = [m for m in marker_list if m in COMPARISON_MARKERS]
+    return selected if selected else marker_list
+
 # ============================================================
 # Config file loading
 # ============================================================
@@ -587,6 +600,7 @@ def plot_boxplot_by_degree_all(all_df, marker_set, output_path):
 
 def plot_boxplot_by_relationship(all_df, marker_set, output_path):
     df = all_df[all_df['Marker_Set'] == marker_set].copy()
+    df = collapse_spouse_to_others(df)
     if len(df) == 0: return
     rel_order = [r for r in RELATIONSHIP_ORDER if r in df['Relationship'].values]
     if not rel_order: return
@@ -612,6 +626,7 @@ def plot_boxplot_by_relationship(all_df, marker_set, output_path):
 
 def plot_violin_by_relationship(all_df, marker_set, output_path):
     df = all_df[all_df['Marker_Set'] == marker_set].copy()
+    df = collapse_spouse_to_others(df)
     if len(df) == 0: return
     rel_order = [r for r in RELATIONSHIP_ORDER if r in df['Relationship'].values]
     if not rel_order: return
@@ -633,6 +648,7 @@ def plot_violin_by_relationship(all_df, marker_set, output_path):
 def plot_relationship_distribution_single(all_df, marker_set, metric, output_path, kind='violin'):
     """Single-metric relationship distribution plot for readability with long labels."""
     df = all_df[all_df['Marker_Set'] == marker_set].copy()
+    df = collapse_spouse_to_others(df)
     if len(df) == 0:
         return
     rel_order = [r for r in RELATIONSHIP_ORDER if r in df['Relationship'].values]
@@ -1054,8 +1070,10 @@ def step5_evaluate(args, gt_df=None):
         marker_list = sorted(set(marker_list))
     if not marker_list:
         print("  ERROR: No marker results found."); return
+    comparison_marker_list = filter_comparison_markers(marker_list)
     print(f"  Ground truth: {len(gt_df):,} pairs")
     print(f"  Marker sets: {marker_list}")
+    print(f"  Comparison marker sets: {comparison_marker_list}")
 
     # Load results
     print("\n[2] Loading results...")
@@ -1115,14 +1133,14 @@ def step5_evaluate(args, gt_df=None):
         ('6th_vs_unrelated', lambda d: d['Degree']==6, lambda d: d['Is_Related']==False, '6 vs Unrelated'),
     ]
     for name, pos, neg, title in roc_scenarios:
-        plot_roc_curves(all_df, name, pos, neg, title, marker_list, DR/f"roc_{name}.png")
+        plot_roc_curves(all_df, name, pos, neg, title, comparison_marker_list, DR/f"roc_{name}.png")
         print(f"    Saved: roc_{name}.png")
 
     # [9] AUC heatmap + Adjacent discrimination
     print("\n[9] Performance comparison...")
     for m in ['IBS','IBD','Kinship']:
-        plot_auc_heatmap(roc_results, m, marker_list, DC/f"auc_heatmap_{m}.png")
-    plot_adjacent_discrimination(roc_results, marker_list, DC/"adjacent_discrimination.png")
+        plot_auc_heatmap(roc_results, m, comparison_marker_list, DC/f"auc_heatmap_{m}.png")
+    plot_adjacent_discrimination(roc_results, comparison_marker_list, DC/"adjacent_discrimination.png")
     print(f"    Saved: adjacent_discrimination.png")
 
     # [10] Scatter
@@ -1132,21 +1150,21 @@ def step5_evaluate(args, gt_df=None):
 
     # [11] NEW: Marker comparison overlay
     print("\n[11] Marker comparison overlay...")
-    if len(marker_list) > 1:
+    if len(comparison_marker_list) > 1:
         for m in ['IBS','IBD','Kinship']:
-            plot_marker_comparison_overlay(all_df, marker_list, m, DC/f"marker_overlay_{m}.png")
+            plot_marker_comparison_overlay(all_df, comparison_marker_list, m, DC/f"marker_overlay_{m}.png")
 
     # [12] NEW: Per-degree summary stats
     print("\n[12] Per-degree summary statistics...")
-    generate_degree_summary_stats(all_df, marker_list, reports_dir/"degree_summary_stats.csv", DM/"degree_summary.png")
+    generate_degree_summary_stats(all_df, comparison_marker_list, reports_dir/"degree_summary_stats.csv", DM/"degree_summary.png")
 
     # [13] NEW: Effect size
     print("\n[13] Effect size (Cohen's d)...")
-    plot_effect_size_adjacent(all_df, marker_list, DM/"effect_size_adjacent.png")
+    plot_effect_size_adjacent(all_df, comparison_marker_list, DM/"effect_size_adjacent.png")
 
     # [14] NEW: Confusion matrices
     print("\n[14] Confusion matrices...")
-    plot_confusion_matrices(all_df, roc_results, marker_list, DM/"confusion_matrices.png")
+    plot_confusion_matrices(all_df, roc_results, comparison_marker_list, DM/"confusion_matrices.png")
 
     # [15] Report
     print("\n[15] Generating report...")
