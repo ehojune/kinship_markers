@@ -92,7 +92,7 @@ RELATIONSHIP_LABELS = {
     'Unrelated': 'Unrelated\n(0)'
 }
 
-COMPARISON_MARKERS = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K']
+COMPARISON_MARKERS = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K', 'Kintelligence', 'QIAseq']
 
 
 def collapse_spouse_to_others(df):
@@ -566,11 +566,9 @@ def plot_boxplot_by_degree_all(all_df, marker_set, output_path):
     df = all_df[all_df['Marker_Set'] == marker_set].copy()
     if len(df) == 0: return
     def get_label(row):
-        if row['Same_Family']:
-            return 'Spouse/InLaw\n(0)' if row['Degree'] == 0 else f"{row['Degree']}"
-        return 'Between-Fam\n(Unrel)'
+        return 'Unrelated\n(0)' if row['Degree'] == 0 else f"{row['Degree']}"
     df['DL'] = df.apply(get_label, axis=1)
-    order = ['1','2','3','4','5','6','Spouse/InLaw\n(0)','Between-Fam\n(Unrel)']
+    order = ['1','2','3','4','5','6','Unrelated\n(0)']
     avail = [o for o in order if o in df['DL'].values]
     pal = []
     for o in avail:
@@ -661,7 +659,7 @@ def plot_relationship_distribution_single(all_df, marker_set, metric, output_pat
     if len(data) == 0:
         return
 
-    fig, ax = plt.subplots(figsize=(max(14, len(lo) * 1.5), 6))
+    fig, ax = plt.subplots(figsize=(max(10, len(lo) * 1.15), 6))
     if kind == 'box':
         sns.boxplot(data=data, x='RL', y=metric, order=lo, palette=pal, ax=ax, width=0.6, linewidth=1.5)
         sns.stripplot(data=data, x='RL', y=metric, order=lo, color='black', size=2, alpha=0.3, ax=ax, jitter=True)
@@ -878,7 +876,7 @@ def plot_scatter_expected_vs_observed(all_df, marker_set, output_path):
 # ============================================================
 # NEW: Marker Comparison Overlay
 # ============================================================
-def plot_marker_comparison_overlay(all_df, marker_list, metric, output_path):
+def plot_marker_comparison_overlay(all_df, marker_list, metric, output_path, title_suffix=''):
     """All markers side-by-side per degree for a given metric."""
     related = all_df[all_df['Degree'] > 0].copy()
     if len(related) == 0: return
@@ -891,7 +889,8 @@ def plot_marker_comparison_overlay(all_df, marker_list, metric, output_path):
                 order=[f"{d}" for d in degrees], hue_order=marker_list, ax=ax,
                 palette={m: MARKER_COLORS.get(m,'gray') for m in marker_list}, width=0.8, linewidth=1)
     ax.set_xlabel('Degree ()', fontsize=13); ax.set_ylabel(metric, fontsize=13)
-    ax.set_title(f'Marker Comparison - {metric}', fontsize=15, fontweight='bold')
+    suffix = f' ({title_suffix})' if title_suffix else ''
+    ax.set_title(f'Marker Comparison - {metric}{suffix}', fontsize=15, fontweight='bold')
     ax.legend(title='Marker Set', loc='upper right', fontsize=8); ax.grid(axis='y', alpha=0.3)
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
     print(f"    Saved: {output_path.name}")
@@ -1153,6 +1152,16 @@ def step5_evaluate(args, gt_df=None):
     if len(comparison_marker_list) > 1:
         for m in ['IBS','IBD','Kinship']:
             plot_marker_comparison_overlay(all_df, comparison_marker_list, m, DC/f"marker_overlay_{m}.png")
+
+    pair_specs = [
+        (['NFS_12K', 'Kintelligence'], '12K vs Kintelligence', '12k_vs_kintelligence'),
+        (['NFS_6K', 'QIAseq'], '6K vs QIAseq', '6k_vs_qiaseq'),
+    ]
+    for pair_markers, pair_title, pair_tag in pair_specs:
+        available = [ms for ms in pair_markers if ms in marker_list]
+        if len(available) == 2:
+            for m in ['IBS', 'IBD', 'Kinship']:
+                plot_marker_comparison_overlay(all_df, available, m, DC/f"marker_overlay_{pair_tag}_{m}.png", title_suffix=pair_title)
 
     # [12] NEW: Per-degree summary stats
     print("\n[12] Per-degree summary statistics...")
