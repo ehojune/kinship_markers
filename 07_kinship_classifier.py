@@ -539,8 +539,7 @@ def plot_thresholds(cinfo,ms,metric,path):
     ax.set_yticks(range(len(grps)))
     ax.set_yticklabels([_gd(g) for g in grps],fontsize=9)
     ax.set_xlabel(metric,fontsize=12)
-    ax.set_title(f'{ms} - {metric}\n(Box=IQR, |=median, red dashed=threshold [ROC Youden\'s J])',
-        fontsize=12,fontweight='bold')
+    ax.set_title(f'Classification Threshold of {ms} with {metric}',fontsize=12,fontweight='bold')
     ax.grid(axis='x',alpha=.3); ax.set_ylim(-1.5,len(grps)-0.3)
     plt.tight_layout(); plt.savefig(path,dpi=150,bbox_inches='tight',facecolor='white'); plt.close()
     print(f"    Saved: {path.name}")
