@@ -30,7 +30,7 @@ plt.rcParams.update({'axes.unicode_minus':False,'figure.dpi':150,
                      'figure.facecolor':'white','font.family':'DejaVu Sans'})
 
 METRICS = ['IBS','IBD','Kinship']
-COMPARISON_MARKERS = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K']
+COMPARISON_MARKERS = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K', 'Kintelligence', 'QIAseq']
 
 RELATIONSHIP_TO_DEGREE = {
     'Unrelated':0,'Spouse':0,'Parent-Child':1,
@@ -68,7 +68,7 @@ GROUP_TO_DEGREE = {
 MARKER_COLORS = {
     'NFS_36K':'#1a5276','NFS_24K':'#2874a6','NFS_20K':'#3498db',
     'NFS_12K':'#e74c3c','NFS_6K':'#9b59b6',
-    'Kintellignece':'#27ae60','Qiaseq':'#f39c12'
+    'Kintelligence':'#27ae60','QIAseq':'#f39c12'
 }
 GROUP_COLORS = {
     'G0_Unrelated':'#bdc3c7','G1_1st':'#c0392b',
@@ -552,7 +552,7 @@ def plot_thresholds(cinfo,ms,metric,path):
     plt.tight_layout(); plt.savefig(path,dpi=150,bbox_inches='tight',facecolor='white'); plt.close()
     print(f"    Saved: {path.name}")
 
-def plot_metric_comparison(rdf,marker_list,path):
+def plot_metric_comparison(rdf,marker_list,path,title_suffix=''):
     mlist=[m for m in marker_list if not is_nocancer(m)]
     rows=[]
     for ms in mlist:
@@ -566,7 +566,7 @@ def plot_metric_comparison(rdf,marker_list,path):
                 Related=rel[gc].mean()*100 if len(rel) else 0))
     mdf=pd.DataFrame(rows)
     if len(mdf)==0: return
-    fig,axes=plt.subplots(1,2,figsize=(16,6))
+    fig,axes=plt.subplots(1,2,figsize=(16,6.5))
     for ax,col,title in zip(axes,['All','Related'],['All Pairs','Related Only']):
         pv=mdf.pivot_table(index='Marker_Set',columns='Metric',values=col)
         x=np.arange(len(pv)); w=0.25
@@ -575,12 +575,16 @@ def plot_metric_comparison(rdf,marker_list,path):
                 bars=ax.bar(x+(i-1)*w,pv[m],w,label=m,color=METRIC_COLORS[m],edgecolor='white')
                 for b in bars:
                     ax.annotate(f'{b.get_height():.1f}',
-                        xy=(b.get_x()+b.get_width()/2,b.get_height()),
+                        xy=(b.get_x()+b.get_width()/2,b.get_height()+0.5),
                         ha='center',va='bottom',fontsize=7,fontweight='bold')
         ax.set_xticks(x); ax.set_xticklabels(pv.index,rotation=45,ha='right')
-        ax.set_ylabel('Group Accuracy (%)'); ax.set_title(f'Metric Comparison ({title})',fontweight='bold')
-        ax.legend(); ax.set_ylim(0,105); ax.grid(axis='y',alpha=.3)
-    plt.tight_layout(); plt.savefig(path,dpi=150,bbox_inches='tight',facecolor='white'); plt.close()
+        ax.set_ylabel('Group Accuracy (%)')
+        suffix=f' - {title_suffix}' if title_suffix else ''
+        ax.set_title(f'Metric Comparison ({title}){suffix}',fontweight='bold')
+        ax.set_ylim(0,110)
+        ax.grid(axis='y',alpha=.3)
+        ax.legend(loc='upper center',bbox_to_anchor=(0.5,1.0),ncol=3,frameon=True,borderaxespad=0.3)
+    plt.tight_layout(rect=[0,0,1,0.98]); plt.savefig(path,dpi=150,bbox_inches='tight',facecolor='white'); plt.close()
     print(f"    Saved: {path.name}")
 
 # ============================================================
@@ -720,6 +724,15 @@ def main():
             plot_thresholds(cinfo,ms,metric,fdir/f"thresholds_{metric}_{ms}.png")
     print(f"\n  --- Metric comparison ---")
     plot_metric_comparison(rdf,ml_comp,fdir/"metric_comparison.png")
+
+    pair_plots=[
+        (['NFS_12K','Kintelligence'],'12K vs Kintelligence','metric_comparison_12k_vs_kintelligence.png'),
+        (['NFS_6K','QIAseq'],'6K vs QIAseq','metric_comparison_6k_vs_qiaseq.png')
+    ]
+    for pair,title,fn in pair_plots:
+        available=[m for m in pair if m in ml]
+        if len(available)==2:
+            plot_metric_comparison(rdf,available,fdir/fn,title_suffix=title)
 
     print(f"\n[7] Report...")
     generate_report(rdf,all_gadf,all_radf,all_mcdf,cinfo,ml,outdir/"classifier_report.txt")
