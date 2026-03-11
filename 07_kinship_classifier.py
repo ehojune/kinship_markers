@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Kinship Relationship Classifier & Evaluator (Step 7) - v6
+Kinship Relationship Classifier & Evaluator (Step 7) - v7
 ==========================================================
-Per-metric classifier with MIDPOINT thresholds:
+Per-metric classifier with ROC-based thresholds (Youden's J):
   - Each metric (IBS, IBD, Kinship) classifies independently
-  - Threshold = midpoint between adjacent group medians
+  - Adjacent group pairs: ROC curve -> Youden's J optimal threshold
+  - Thresholds chained sequentially for multi-class classification
   - 2nd degree split into Sibling vs GP-GC
   - Grand-Uncle-Nephew = 4th degree
 
@@ -21,7 +22,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -100,7 +101,7 @@ def filter_real(df):
                 df['Sample2'].str.contains('GP|GM',na=False))].copy()
 
 # ============================================================
-# 1. Midpoint Threshold Classifier
+# 1. ROC-based Threshold Classifier (Youden's J)
 # ============================================================
 def compute_group_stats(df_marker, metric):
     stats = {}
@@ -113,16 +114,83 @@ def compute_group_stats(df_marker, metric):
                           q75=v.quantile(.75),q90=v.quantile(.90))
     return stats
 
-def build_boundaries_midpoint(gstats):
-    """Midpoint between adjacent group medians."""
-    medians = {g:s['median'] for g,s in gstats.items()}
+
+def compute_roc_threshold(valsHi, valsLo):
+    """Compute ROC optimal threshold (Youden's J) between two groups.
+
+    valsHi: values of the group with higher metric values (positive class)
+    valsLo: values of the group with lower metric values (negative class)
+
+    Returns: (optimal_threshold, auc, midpoint_threshold)
+    """
+    scores = np.concatenate([valsHi, valsLo])
+    # positive=1 for Hi group, negative=0 for Lo group
+    labels = np.concatenate([np.ones(len(valsHi)), np.zeros(len(valsLo))])
+
+    # Remove NaN
+    valid = ~np.isnan(scores)
+    scores, labels = scores[valid], labels[valid]
+
+    if len(np.unique(labels)) < 2 or len(labels) == 0:
+        midpoint = (np.median(valsHi) + np.median(valsLo)) / 2
+        return midpoint, None, midpoint
+
+    midpoint = (np.median(valsHi) + np.median(valsLo)) / 2
+
+    try:
+        auc = roc_auc_score(labels, scores)
+        fpr, tpr, thresholds = roc_curve(labels, scores)
+        # Youden's J = tpr - fpr, maximize
+        j_scores = tpr - fpr
+        opt_idx = np.argmax(j_scores)
+        opt_threshold = thresholds[opt_idx]
+        return opt_threshold, auc, midpoint
+    except Exception:
+        return midpoint, None, midpoint
+
+
+def build_boundaries_roc(df_marker, metric, gstats):
+    """Build ROC-based boundaries between adjacent groups.
+
+    For each pair of adjacent groups (sorted by median), compute ROC curve
+    and find Youden's J optimal threshold. Chain all thresholds.
+    """
+    medians = {g: s['median'] for g, s in gstats.items()}
+    # Sort groups by median value (descending)
     ordered = sorted(medians, key=lambda g: medians[g], reverse=True)
+
+    pair_thresholds = {}
+    roc_details = {}
+    for i in range(len(ordered) - 1):
+        gHi, gLo = ordered[i], ordered[i + 1]
+        vHi = df_marker[df_marker['Group']==gHi][metric].dropna().values
+        vLo = df_marker[df_marker['Group']==gLo][metric].dropna().values
+
+        if len(vHi) == 0 or len(vLo) == 0:
+            th = (medians[gHi] + medians[gLo]) / 2
+            pair_thresholds[(gHi, gLo)] = th
+            roc_details[(gHi, gLo)] = dict(threshold=th, auc=None, midpoint=th,
+                                           method='midpoint(fallback)')
+            continue
+
+        opt_th, auc, mid_th = compute_roc_threshold(vHi, vLo)
+        pair_thresholds[(gHi, gLo)] = opt_th
+        roc_details[(gHi, gLo)] = dict(threshold=opt_th, auc=auc, midpoint=mid_th,
+                                       method='ROC(Youden)')
+
+        auc_str = f"{auc:.3f}" if auc is not None else "N/A"
+        print(f"      {_gs(gHi):>8} vs {_gs(gLo):<8}: "
+              f"ROC_th={opt_th:.5f} (AUC={auc_str}) | midpoint={mid_th:.5f}")
+
+    # Convert pair thresholds to per-group bounds
     bounds = {}
     for i, grp in enumerate(ordered):
-        hi = float('inf') if i==0 else (medians[ordered[i-1]]+medians[grp])/2
-        lo = float('-inf') if i==len(ordered)-1 else (medians[grp]+medians[ordered[i+1]])/2
+        hi = float('inf') if i == 0 else pair_thresholds[(ordered[i-1], grp)]
+        lo = float('-inf') if i == len(ordered)-1 else pair_thresholds[(grp, ordered[i+1])]
         bounds[grp] = (lo, hi)
-    return bounds
+
+    return bounds, roc_details
+
 
 def classify_value(val, bounds):
     if pd.isna(val): return None
@@ -148,21 +216,19 @@ def run_classifier(all_df, marker_list):
             if metric not in df.columns: continue
             gstats = compute_group_stats(df, metric)
             if not gstats: continue
-            bounds = build_boundaries_midpoint(gstats)
-            cinfo[ms][metric] = dict(stats=gstats, boundaries=bounds)
+            print(f"    {metric}:")
+            bounds, roc_details = build_boundaries_roc(df, metric, gstats)
+            cinfo[ms][metric] = dict(stats=gstats, boundaries=bounds, roc_details=roc_details)
             col_pred = f'Pred_{metric}'
             df[col_pred] = df[metric].apply(lambda v: classify_value(v, bounds))
             df[f'PredDeg_{metric}'] = df[col_pred].map(GROUP_TO_DEGREE)
             df[f'GroupCorrect_{metric}'] = df['Group']==df[col_pred]
             df[f'DegCorrect_{metric}'] = df['Degree']==df[f'PredDeg_{metric}']
             df[f'DegWithin1_{metric}'] = (df['Degree']-df[f'PredDeg_{metric}']).abs()<=1
-        for metric in METRICS:
-            gc = f'GroupCorrect_{metric}'
-            if gc not in df.columns: continue
-            rel = df[df['Degree']>0]
-            ga = rel[gc].mean()*100 if len(rel) else 0
-            da = rel[f'DegCorrect_{metric}'].mean()*100 if len(rel) else 0
-            print(f"    {metric}: GroupAcc={ga:.1f}% DegreeAcc={da:.1f}%")
+            rel=df[df['Degree']>0]
+            ga=rel[f'GroupCorrect_{metric}'].mean()*100 if len(rel) else 0
+            da=rel[f'DegCorrect_{metric}'].mean()*100 if len(rel) else 0
+            print(f"      => GroupAcc={ga:.1f}% DegreeAcc={da:.1f}%")
         all_results.append(df)
     return pd.concat(all_results, ignore_index=True), cinfo
 
@@ -223,12 +289,26 @@ def export_thresholds(cinfo, outdir):
     for ms,minfo in cinfo.items():
         with open(tdir/f"thresholds_{ms}.txt",'w') as f:
             f.write(f"{'='*90}\nCLASSIFICATION THRESHOLDS: {ms}\n{'='*90}\n\n")
-            f.write("Method: Midpoint between adjacent group medians\n")
+            f.write("Method: ROC-based (Youden's J index) per adjacent group pair\n")
+            f.write("  threshold = argmax(TPR - FPR) on ROC curve\n")
             f.write("2nd degree split: Sibling vs GP-GC\n\n")
             for metric in METRICS:
                 if metric not in minfo: continue
                 bd=minfo[metric]['boundaries']; gs=minfo[metric]['stats']
+                rd=minfo[metric]['roc_details']
                 f.write(f"{'~'*90}\n  METRIC: {metric}\n{'~'*90}\n\n")
+
+                # ROC details per boundary
+                f.write(f"  ROC BOUNDARY DETAILS\n")
+                f.write(f"  {'Pair':<30} {'Method':<18} {'ROC_Th':>10} {'AUC':>8} {'Midpoint':>10}\n")
+                f.write(f"  "+"-"*80+"\n")
+                for (gHi,gLo),det in rd.items():
+                    pair_name = f"{_gs(gHi)} vs {_gs(gLo)}"
+                    auc_s = f"{det['auc']:.3f}" if det['auc'] is not None else "N/A"
+                    f.write(f"  {pair_name:<30} {det['method']:<18} "
+                            f"{det['threshold']:>10.6f} {auc_s:>8} {det['midpoint']:>10.6f}\n")
+
+                f.write(f"\n  CLASSIFICATION BOUNDARIES\n")
                 f.write(f"  {'Group':<22} {'Lower':>12} {'Upper':>12}  |  {'Median':>10} {'Mean':>10} {'Std':>8} {'N':>5}\n")
                 f.write(f"  "+"-"*85+"\n")
                 for grp in GROUP_ORDER:
@@ -254,15 +334,20 @@ def export_thresholds(cinfo, outdir):
         for metric in METRICS:
             if metric not in minfo: continue
             bd=minfo[metric]['boundaries']; gs=minfo[metric]['stats']
+            rd=minfo[metric]['roc_details']
             for grp in GROUP_ORDER:
                 if grp not in bd: continue
                 lo,hi=bd[grp]; s=gs.get(grp,{})
+                # find AUC for boundaries involving this group
+                auc_lo = next((d['auc'] for (gH,gL),d in rd.items() if gL==grp), None)
+                auc_hi = next((d['auc'] for (gH,gL),d in rd.items() if gH==grp), None)
                 csv_rows.append(dict(Metric=metric,Group=grp,GroupLabel=_gs(grp),
                     Degree=GROUP_TO_DEGREE.get(grp,-1),
                     Lower=lo if lo!=float('-inf') else None,
                     Upper=hi if hi!=float('inf') else None,
                     Median=s.get('median'),Mean=s.get('mean'),
-                    Std=s.get('std'),N=s.get('n'),Q25=s.get('q25'),Q75=s.get('q75')))
+                    Std=s.get('std'),N=s.get('n'),Q25=s.get('q25'),Q75=s.get('q75'),
+                    AUC_Lower=auc_lo, AUC_Upper=auc_hi))
         pd.DataFrame(csv_rows).to_csv(tdir/f"thresholds_{ms}.csv",index=False)
 
 # ============================================================
@@ -454,7 +539,7 @@ def plot_thresholds(cinfo,ms,metric,path):
     ax.set_yticks(range(len(grps)))
     ax.set_yticklabels([_gd(g) for g in grps],fontsize=9)
     ax.set_xlabel(metric,fontsize=12)
-    ax.set_title(f'{ms} - {metric}\n(Box=IQR, |=median, red dashed=threshold [midpoint])',
+    ax.set_title(f'{ms} - {metric}\n(Box=IQR, |=median, red dashed=threshold [ROC Youden\'s J])',
         fontsize=12,fontweight='bold')
     ax.grid(axis='x',alpha=.3); ax.set_ylim(-1.5,len(grps)-0.3)
     plt.tight_layout(); plt.savefig(path,dpi=150,bbox_inches='tight',facecolor='white'); plt.close()
@@ -506,10 +591,10 @@ def generate_master_tables(rdf,mlist,tdir):
 
 def generate_report(rdf,all_gadf,all_radf,all_mcdf,cinfo,mlist,rpath):
     with open(rpath,'w',encoding='utf-8') as f:
-        f.write("="*100+"\nKINSHIP CLASSIFIER - EVALUATION REPORT (v6)\n"+"="*100+"\n\n")
+        f.write("="*100+"\nKINSHIP CLASSIFIER - EVALUATION REPORT (v7)\n"+"="*100+"\n\n")
         f.write("METHOD\n"+"-"*80+"\n")
         f.write("  Per-metric classification (IBS, IBD, Kinship independently)\n")
-        f.write("  Midpoint thresholds between adjacent group medians\n")
+        f.write("  ROC-based thresholds: Youden's J (argmax TPR-FPR) per adjacent group pair\n")
         f.write("  2nd degree split: Sibling vs GP-GC\n")
         f.write("  Grand-Uncle-Nephew = 4th degree\n\n")
         for metric in METRICS:
@@ -526,19 +611,33 @@ def generate_report(rdf,all_gadf,all_radf,all_mcdf,cinfo,mlist,rpath):
                 f.write(f"      All:     {n:>6} | GroupAcc: {nc/n*100:>5.1f}% | DegreeAcc: {ndc/n*100:>5.1f}%\n")
                 if nr: f.write(f"      Related: {nr:>6} | GroupAcc: {nrc/nr*100:>5.1f}% | DegreeAcc: {nrdc/nr*100:>5.1f}%\n")
                 f.write("\n")
-            f.write(f"\n  2. PER-GROUP ACCURACY\n  "+"-"*70+"\n")
+
+            # ROC details
+            f.write(f"\n  2. ROC THRESHOLDS\n  "+"-"*70+"\n")
+            for ms in mlist:
+                if metric not in cinfo.get(ms,{}): continue
+                rd=cinfo[ms][metric]['roc_details']
+                f.write(f"\n    [{ms}]\n")
+                f.write(f"    {'Pair':<30} {'ROC_Th':>10} {'AUC':>8} {'Midpoint':>10}\n")
+                f.write(f"    "+"-"*60+"\n")
+                for (gHi,gLo),det in rd.items():
+                    pair_name=f"{_gs(gHi)} vs {_gs(gLo)}"
+                    auc_s=f"{det['auc']:.3f}" if det['auc'] is not None else "N/A"
+                    f.write(f"    {pair_name:<30} {det['threshold']:>10.6f} {auc_s:>8} {det['midpoint']:>10.6f}\n")
+
+            f.write(f"\n\n  3. PER-GROUP ACCURACY\n  "+"-"*70+"\n")
             for ms in mlist:
                 f.write(f"\n    [{ms}]\n    {'Group':<22} {'N':>5} {'GrpAcc':>7} {'DegAcc':>7} {'+/-1':>6}\n    "+"-"*50+"\n")
                 for _,r in gadf[gadf['Marker_Set']==ms].sort_values('Group').iterrows():
                     f.write(f"    {r['Label']:<22} {int(r['N']):>5} {r['GroupAcc']:>6.1f}% {r['DegreeAcc']:>6.1f}% {r['Within1']:>5.1f}%\n")
-            f.write(f"\n\n  3. PER-RELATIONSHIP ACCURACY\n  "+"-"*70+"\n")
+            f.write(f"\n\n  4. PER-RELATIONSHIP ACCURACY\n  "+"-"*70+"\n")
             for ms in mlist:
                 f.write(f"\n    [{ms}]\n    {'Relationship':<26} {'Group':>10} {'N':>5} {'GrpAcc':>7} {'DegAcc':>7} {'->':>10}\n    "+"-"*70+"\n")
                 sub=radf[(radf['Marker_Set']==ms)&(radf['True_Degree']>0)].sort_values('True_Group')
                 for _,r in sub.iterrows():
                     f.write(f"    {r['Relationship']:<26} {_gs(r['True_Group']):>10} {int(r['N']):>5} "
                             f"{r['GroupAcc']:>6.1f}% {r['DegreeAcc']:>6.1f}% ->{_gs(r['MostPredGroup']):>9}\n")
-            f.write(f"\n\n  4. MISCLASSIFIED (related)\n  "+"-"*70+"\n")
+            f.write(f"\n\n  5. MISCLASSIFIED (related)\n  "+"-"*70+"\n")
             if len(mcdf)==0: f.write("    None!\n")
             else:
                 for ms in mlist:
@@ -557,7 +656,7 @@ def generate_report(rdf,all_gadf,all_radf,all_mcdf,cinfo,mlist,rpath):
 # Main
 # ============================================================
 def main():
-    parser=argparse.ArgumentParser(description='Kinship Classifier v6 (per-metric, midpoint)')
+    parser=argparse.ArgumentParser(description='Kinship Classifier v7 (per-metric, ROC Youden)')
     parser.add_argument('--results-dir',type=str)
     parser.add_argument('--combined-csv',type=str)
     parser.add_argument('--output-dir',type=str,default=None)
@@ -567,7 +666,7 @@ def main():
     else: cpath=Path.home()/"kinship/Analysis/20251031_wgrs/06_kinship_analysis/all_results_combined.csv"
     if not cpath.exists(): print(f"ERROR: {cpath} not found"); sys.exit(1)
 
-    print("="*70+"\nKINSHIP CLASSIFIER v6 (per-metric, midpoint thresholds)\n"+"="*70)
+    print("="*70+"\nKINSHIP CLASSIFIER v7 (per-metric, ROC-based thresholds)\n"+"="*70)
     print(f"\n[1] Loading: {cpath}")
     all_df=pd.read_csv(cpath)
     marker_list=sorted(all_df['Marker_Set'].unique())
@@ -581,7 +680,7 @@ def main():
     fdir,tdir=outdir/"figures",outdir/"tables"
     for d in [outdir,fdir,tdir]: d.mkdir(parents=True,exist_ok=True)
 
-    print(f"\n[2] Classifying (per-metric, midpoint)...")
+    print(f"\n[2] Classifying (per-metric, ROC Youden's J)...")
     rdf,cinfo=run_classifier(all_df,ml)
 
     print(f"\n[3] Evaluating...")
