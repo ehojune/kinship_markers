@@ -30,6 +30,7 @@ plt.rcParams.update({'axes.unicode_minus':False,'figure.dpi':150,
                      'figure.facecolor':'white','font.family':'DejaVu Sans'})
 
 METRICS = ['IBS','IBD','Kinship']
+COMPARISON_MARKERS = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K']
 
 RELATIONSHIP_TO_DEGREE = {
     'Unrelated':0,'Spouse':0,'Parent-Child':1,
@@ -80,6 +81,10 @@ METRIC_COLORS = {'IBS':'#3498db','IBD':'#e74c3c','Kinship':'#2ecc71'}
 def is_nocancer(ms): return 'nocancer' in ms.lower()
 def _gd(g): return GROUP_DISPLAY.get(g,g)
 def _gs(g): return GROUP_DISPLAY_SHORT.get(g,g)
+
+def filter_comparison_markers(marker_list):
+    selected = [m for m in marker_list if m in COMPARISON_MARKERS]
+    return selected if selected else marker_list
 
 # ============================================================
 # 0. Data Prep
@@ -457,9 +462,12 @@ def plot_confusion_matrices(rdf,mlist,metric,outdir):
         plt.savefig(outdir/f"confusion_{metric}_{ms}.png",dpi=150,bbox_inches='tight',facecolor='white'); plt.close()
         print(f"    Saved: confusion_{metric}_{ms}.png")
 
-def plot_misclassification_summary(mcdf,metric,path):
+def plot_misclassification_summary(mcdf,metric,path,include_markers=None):
     if len(mcdf)==0: print("    No misclassifications."); return
     mcdf_f=mcdf[~mcdf['Marker_Set'].apply(is_nocancer)]
+    if include_markers is not None:
+        mcdf_f=mcdf_f[mcdf_f['Marker_Set'].isin(include_markers)]
+    if len(mcdf_f)==0: print("    No misclassifications."); return
     pivot=mcdf_f.groupby(['Marker_Set','True_Group']).size().reset_index(name='Errors')
     mlist=sorted(pivot['Marker_Set'].unique())
     groups=[g for g in GROUP_ORDER if g in pivot['True_Group'].values]
@@ -670,7 +678,9 @@ def main():
     all_df=pd.read_csv(cpath)
     marker_list=sorted(all_df['Marker_Set'].unique())
     ml=[m for m in marker_list if not is_nocancer(m)]
+    ml_comp=filter_comparison_markers(ml)
     print(f"    {len(all_df):,} rows, {len(marker_list)} markers ({len(ml)} non-nocancer)")
+    print(f"    Comparison markers: {', '.join(ml_comp)}")
     print(f"\n[1b] Fixing degrees & adding groups...")
     all_df=fix_degree_labels(all_df)
 
@@ -698,16 +708,18 @@ def main():
     print(f"\n[6] Figures...")
     for metric in METRICS:
         print(f"\n  --- {metric} ---")
-        plot_accuracy_overall(rdf,ml,metric,fdir)
-        plot_accuracy_heatmap_group(all_gadf[metric],metric,fdir/f"heatmap_group_{metric}.png")
-        plot_accuracy_by_relationship(all_radf[metric],metric,fdir/f"accuracy_rel_{metric}.png")
-        plot_confusion_matrices(rdf,ml,metric,fdir)
-        plot_misclassification_summary(all_mcdf[metric],metric,fdir/f"misclass_{metric}.png")
-        plot_forensic_scenarios(rdf,ml,metric,fdir/f"forensic_{metric}.png")
+        plot_accuracy_overall(rdf,ml_comp,metric,fdir)
+        gadf_comp=all_gadf[metric][all_gadf[metric]['Marker_Set'].isin(ml_comp)]
+        radf_comp=all_radf[metric][all_radf[metric]['Marker_Set'].isin(ml_comp)]
+        plot_accuracy_heatmap_group(gadf_comp,metric,fdir/f"heatmap_group_{metric}.png")
+        plot_accuracy_by_relationship(radf_comp,metric,fdir/f"accuracy_rel_{metric}.png")
+        plot_confusion_matrices(rdf,ml_comp,metric,fdir)
+        plot_misclassification_summary(all_mcdf[metric],metric,fdir/f"misclass_{metric}.png",include_markers=ml_comp)
+        plot_forensic_scenarios(rdf,ml_comp,metric,fdir/f"forensic_{metric}.png")
         for ms in ml:
             plot_thresholds(cinfo,ms,metric,fdir/f"thresholds_{metric}_{ms}.png")
     print(f"\n  --- Metric comparison ---")
-    plot_metric_comparison(rdf,ml,fdir/"metric_comparison.png")
+    plot_metric_comparison(rdf,ml_comp,fdir/"metric_comparison.png")
 
     print(f"\n[7] Report...")
     generate_report(rdf,all_gadf,all_radf,all_mcdf,cinfo,ml,outdir/"classifier_report.txt")
