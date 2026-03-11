@@ -629,6 +629,38 @@ def plot_violin_by_relationship(all_df, marker_set, output_path):
     plt.suptitle(f'{marker_set} - Violin by Relationship', fontsize=16, fontweight='bold', y=1.02)
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
 
+
+def plot_relationship_distribution_single(all_df, marker_set, metric, output_path, kind='violin'):
+    """Single-metric relationship distribution plot for readability with long labels."""
+    df = all_df[all_df['Marker_Set'] == marker_set].copy()
+    if len(df) == 0:
+        return
+    rel_order = [r for r in RELATIONSHIP_ORDER if r in df['Relationship'].values]
+    if not rel_order:
+        return
+    df['RL'] = df['Relationship'].map(lambda x: RELATIONSHIP_LABELS.get(x, x))
+    lo = [RELATIONSHIP_LABELS.get(r, r) for r in rel_order]
+    pal = [RELATIONSHIP_COLORS.get(r, '#95a5a6') for r in rel_order]
+    data = df.dropna(subset=[metric])
+    if len(data) == 0:
+        return
+
+    fig, ax = plt.subplots(figsize=(max(14, len(lo) * 1.5), 6))
+    if kind == 'box':
+        sns.boxplot(data=data, x='RL', y=metric, order=lo, palette=pal, ax=ax, width=0.6, linewidth=1.5)
+        sns.stripplot(data=data, x='RL', y=metric, order=lo, color='black', size=2, alpha=0.3, ax=ax, jitter=True)
+    else:
+        sns.violinplot(data=data, x='RL', y=metric, order=lo, palette=pal, ax=ax, inner='box', linewidth=1)
+    ax.set_xlabel('Relationship', fontsize=12)
+    ax.set_ylabel(metric, fontsize=12)
+    ax.set_title(f'{marker_set} - {metric} ({kind.capitalize()} by Relationship)', fontsize=14, fontweight='bold')
+    ax.tick_params(axis='x', rotation=30, labelsize=10)
+    ax.grid(axis='y', alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white')
+    plt.close()
+    print(f"    Saved: {output_path.name}")
+
 def plot_heatmap_standard(all_df, marker_set, metric, output_path):
     df = all_df[all_df['Marker_Set'] == marker_set].copy()
     if len(df) == 0 or df[metric].isna().all(): return
@@ -773,12 +805,13 @@ def plot_auc_heatmap(roc_results, metric, marker_list, output_path):
     if not mo: return
     pivot = pivot.reindex(mo).apply(pd.to_numeric, errors='coerce')
     if pivot.isna().all().all(): return
-    fig, ax = plt.subplots(figsize=(16, max(4, len(mo)*0.8+2)))
+    fig, ax = plt.subplots(figsize=(18, max(5, len(mo) * 1.15 + 2)))
     sns.heatmap(pivot, annot=True, fmt='.3f', cmap='RdYlGn', vmin=0.5, vmax=1.0,
                 ax=ax, linewidths=0.5, cbar_kws={'label':'AUC','shrink':0.8}, annot_kws={'size':9})
     ax.set_title(f'{metric} - AUC by Scenario', fontsize=14, fontweight='bold')
     ax.set_xlabel('Scenario'); ax.set_ylabel('Marker Set')
     plt.xticks(rotation=45, ha='right', fontsize=9)
+    plt.yticks(rotation=20, ha='right', fontsize=10)
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
 
 def plot_adjacent_discrimination(roc_results, marker_list, output_path):
@@ -1053,6 +1086,9 @@ def step5_evaluate(args, gt_df=None):
     for ms in marker_list:
         plot_boxplot_by_relationship(all_df, ms, DD/f"boxplot_relationship_{ms}.png")
         plot_violin_by_relationship(all_df, ms, DD/f"violin_relationship_{ms}.png")
+        for metric in ['IBS', 'IBD', 'Kinship']:
+            plot_relationship_distribution_single(all_df, ms, metric, DD/f"boxplot_relationship_{metric}_{ms}.png", kind='box')
+            plot_relationship_distribution_single(all_df, ms, metric, DD/f"violin_relationship_{metric}_{ms}.png", kind='violin')
 
     # [6] Heatmaps
     print("\n[6] Heatmaps...")
