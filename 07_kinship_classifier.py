@@ -92,11 +92,34 @@ def order_markers(marker_list):
 
 def filter_comparison_markers(marker_list):
     selected = [m for m in marker_list if m in COMPARISON_MARKERS]
-    return selected if selected else marker_list
+    return order_markers(selected) if selected else order_markers(marker_list)
 
 
 def filter_nfs_markers(marker_list):
-    return [m for m in marker_list if m.startswith('NFS_')]
+    return order_markers([m for m in marker_list if m.startswith('NFS_')])
+
+
+def normalize_marker_set_names(df):
+    """Normalize marker names so comparison plots always include external panels.
+
+    Some combined CSV files use lowercase or variant names (e.g. "qiaseq",
+    "kintelligence"). Canonicalizing those names ensures COMPARISON markers are
+    detected consistently.
+    """
+    aliases = {
+        'nfs_36k': 'NFS_36K',
+        'nfs_24k': 'NFS_24K',
+        'nfs_20k': 'NFS_20K',
+        'nfs_12k': 'NFS_12K',
+        'nfs_6k': 'NFS_6K',
+        'kintelligence': 'Kintelligence',
+        'qiaseq': 'QIAseq',
+    }
+    out = df.copy()
+    out['Marker_Set'] = out['Marker_Set'].apply(
+        lambda x: aliases.get(str(x).strip().lower(), x)
+    )
+    return out
 
 
 def normalize_marker_set_names(df):
@@ -394,8 +417,8 @@ def export_thresholds(cinfo, outdir):
 # 5. Plots
 # ============================================================
 def plot_accuracy_overall(rdf,marker_list,metric,fdir):
-    all_no_nc=[m for m in marker_list if not is_nocancer(m)]
-    nfs_only=[m for m in all_no_nc if m.startswith('NFS_')]
+    all_no_nc=order_markers([m for m in marker_list if not is_nocancer(m)])
+    nfs_only=order_markers([m for m in all_no_nc if m.startswith('NFS_')])
     pc,gc=f'Pred_{metric}',f'GroupCorrect_{metric}'
     def _summary(mlist):
         rows=[]
@@ -411,7 +434,7 @@ def plot_accuracy_overall(rdf,marker_list,metric,fdir):
         fig,axes=plt.subplots(1,2,figsize=(14,6))
         for ax,col,title in [(axes[0],'All',f'[{_md(metric)}] All Pairs - {subtitle}'),
                              (axes[1],'Related',f'[{_md(metric)}] Related Only - {subtitle}')]:
-            order=summ.sort_values(col,ascending=False)['Marker_Set'].tolist()
+            order=[m for m in ml_sub if m in summ['Marker_Set'].values]
             vals=[summ[summ['Marker_Set']==m][col].values[0] for m in order]
             colors=[MARKER_COLORS.get(m,'#95a5a6') for m in order]
             bars=ax.bar(range(len(order)),vals,color=colors,edgecolor='white')
@@ -505,7 +528,7 @@ def plot_misclassification_summary(mcdf,metric,path,include_markers=None):
         mcdf_f=mcdf_f[mcdf_f['Marker_Set'].isin(include_markers)]
     if len(mcdf_f)==0: print("    No misclassifications."); return
     pivot=mcdf_f.groupby(['Marker_Set','True_Group']).size().reset_index(name='Errors')
-    mlist=sorted(pivot['Marker_Set'].unique())
+    mlist=order_markers(list(pivot['Marker_Set'].unique()))
     groups=[g for g in GROUP_ORDER if g in pivot['True_Group'].values]
     fig,ax=plt.subplots(figsize=(max(12,len(groups)*2),6))
     nm=len(mlist); bw=0.8/nm; x=np.arange(len(groups))
@@ -718,8 +741,8 @@ def main():
     print(f"\n[1] Loading: {cpath}")
     all_df=pd.read_csv(cpath)
     all_df=normalize_marker_set_names(all_df)
-    marker_list=sorted(all_df['Marker_Set'].unique())
-    ml=[m for m in marker_list if not is_nocancer(m)]
+    marker_list=order_markers(sorted(all_df['Marker_Set'].unique()))
+    ml=order_markers([m for m in marker_list if not is_nocancer(m)])
     ml_comp=filter_comparison_markers(ml)
     ml_nfs=filter_nfs_markers(ml_comp)
     print(f"    {len(all_df):,} rows, {len(marker_list)} markers ({len(ml)} non-nocancer)")
