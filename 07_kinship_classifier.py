@@ -98,6 +98,29 @@ def filter_comparison_markers(marker_list):
 def filter_nfs_markers(marker_list):
     return [m for m in marker_list if m.startswith('NFS_')]
 
+
+def normalize_marker_set_names(df):
+    """Normalize marker names so comparison plots always include external panels.
+
+    Some combined CSV files use lowercase or variant names (e.g. "qiaseq",
+    "kintelligence"). Canonicalizing those names ensures COMPARISON markers are
+    detected consistently.
+    """
+    aliases = {
+        'nfs_36k': 'NFS_36K',
+        'nfs_24k': 'NFS_24K',
+        'nfs_20k': 'NFS_20K',
+        'nfs_12k': 'NFS_12K',
+        'nfs_6k': 'NFS_6K',
+        'kintelligence': 'Kintelligence',
+        'qiaseq': 'QIAseq',
+    }
+    out = df.copy()
+    out['Marker_Set'] = out['Marker_Set'].apply(
+        lambda x: aliases.get(str(x).strip().lower(), x)
+    )
+    return out
+
 # ============================================================
 # 0. Data Prep
 # ============================================================
@@ -694,6 +717,7 @@ def main():
     print("="*70+"\nKINSHIP CLASSIFIER v7 (per-metric, ROC-based thresholds)\n"+"="*70)
     print(f"\n[1] Loading: {cpath}")
     all_df=pd.read_csv(cpath)
+    all_df=normalize_marker_set_names(all_df)
     marker_list=sorted(all_df['Marker_Set'].unique())
     ml=[m for m in marker_list if not is_nocancer(m)]
     ml_comp=filter_comparison_markers(ml)
@@ -726,39 +750,41 @@ def main():
     print(f"\n[5] Master tables..."); generate_master_tables(rdf,ml,tdir)
 
     print(f"\n[6] Figures...")
+    marker_variants=[('comparison', ml_comp, '', ''), ('nfs_only', ml_nfs, '_nfs_only', 'NFS only')]
     for metric in METRICS:
         print(f"\n  --- {metric} ---")
         plot_accuracy_overall(rdf,ml_comp,metric,fdir)
-        gadf_comp=all_gadf[metric][all_gadf[metric]['Marker_Set'].isin(ml_comp)]
-        radf_comp=all_radf[metric][all_radf[metric]['Marker_Set'].isin(ml_comp)]
-        plot_accuracy_heatmap_group(gadf_comp,metric,fdir/f"heatmap_group_{metric}.png")
-        plot_accuracy_by_relationship(radf_comp,metric,fdir/f"accuracy_rel_{metric}.png")
-        plot_confusion_matrices(rdf,ml_comp,metric,fdir)
-        plot_misclassification_summary(all_mcdf[metric],metric,fdir/f"misclass_{metric}.png",include_markers=ml_comp)
-        plot_forensic_scenarios(rdf,ml_comp,metric,fdir/f"forensic_{metric}.png")
-        if len(ml_nfs) > 1:
-            gadf_nfs=all_gadf[metric][all_gadf[metric]['Marker_Set'].isin(ml_nfs)]
-            radf_nfs=all_radf[metric][all_radf[metric]['Marker_Set'].isin(ml_nfs)]
-            plot_accuracy_heatmap_group(gadf_nfs,metric,fdir/f"heatmap_group_{metric}_nfs_only.png")
-            plot_accuracy_by_relationship(radf_nfs,metric,fdir/f"accuracy_rel_{metric}_nfs_only.png")
-            plot_confusion_matrices(rdf,ml_nfs,metric,fdir/"nfs_only")
-            plot_misclassification_summary(all_mcdf[metric],metric,fdir/f"misclass_{metric}_nfs_only.png",include_markers=ml_nfs)
-            plot_forensic_scenarios(rdf,ml_nfs,metric,fdir/f"forensic_{metric}_nfs_only.png")
+        for variant_name, mlist, file_suffix, title_suffix in marker_variants:
+            if len(mlist) <= 1:
+                continue
+            gadf_sub=all_gadf[metric][all_gadf[metric]['Marker_Set'].isin(mlist)]
+            radf_sub=all_radf[metric][all_radf[metric]['Marker_Set'].isin(mlist)]
+            plot_accuracy_heatmap_group(gadf_sub,metric,fdir/f"heatmap_group_{metric}{file_suffix}.png")
+            plot_accuracy_by_relationship(radf_sub,metric,fdir/f"accuracy_rel_{metric}{file_suffix}.png")
+            conf_dir = fdir if variant_name=='comparison' else fdir/"nfs_only"
+            plot_confusion_matrices(rdf,mlist,metric,conf_dir)
+            plot_misclassification_summary(all_mcdf[metric],metric,fdir/f"misclass_{metric}{file_suffix}.png",include_markers=mlist)
+            plot_forensic_scenarios(rdf,mlist,metric,fdir/f"forensic_{metric}{file_suffix}.png")
         for ms in ml:
             plot_thresholds(cinfo,ms,metric,fdir/f"thresholds_{metric}_{ms}.png")
+
     print(f"\n  --- Metric comparison ---")
-    plot_metric_comparison(rdf,ml_comp,fdir/"metric_comparison.png")
-    if len(ml_nfs) > 1:
-        plot_metric_comparison(rdf,ml_nfs,fdir/"metric_comparison_nfs_only.png",title_suffix='NFS only')
+    for _, mlist, file_suffix, title_suffix in marker_variants:
+        if len(mlist) <= 1:
+            continue
+        plot_metric_comparison(rdf,mlist,fdir/f"metric_comparison{file_suffix}.png",title_suffix=title_suffix)
 
     pair_plots=[
-        (['NFS_12K','Kintelligence'],'12K vs Kintelligence','metric_comparison_12k_vs_kintelligence.png'),
-        (['NFS_6K','QIAseq'],'6K vs QIAseq','metric_comparison_6k_vs_qiaseq.png')
+        (['NFS_12K','Kintelligence'],'12K vs Kintelligence','metric_comparison_12k_vs_kintelligence'),
+        (['NFS_6K','QIAseq'],'6K vs QIAseq','metric_comparison_6k_vs_qiaseq')
     ]
-    for pair,title,fn in pair_plots:
-        available=[m for m in pair if m in ml]
+    for pair,title,base_fn in pair_plots:
+        available=[m for m in pair if m in ml_comp]
         if len(available)==2:
-            plot_metric_comparison(rdf,available,fdir/fn,title_suffix=title)
+            plot_metric_comparison(rdf,available,fdir/f"{base_fn}.png",title_suffix=title)
+            available_nfs=[m for m in available if m in ml_nfs]
+            if len(available_nfs)>=1:
+                plot_metric_comparison(rdf,available_nfs,fdir/f"{base_fn}_nfs_only.png",title_suffix=f"{title} (NFS only)")
 
     print(f"\n[7] Report...")
     generate_report(rdf,all_gadf,all_radf,all_mcdf,cinfo,ml,outdir/"classifier_report.txt")
