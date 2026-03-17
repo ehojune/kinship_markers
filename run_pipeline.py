@@ -93,6 +93,7 @@ RELATIONSHIP_LABELS = {
 }
 
 COMPARISON_MARKERS = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K', 'Kintelligence', 'QIAseq']
+DISPLAY_METRIC = {'IBS': 'IBS', 'IBD': 'IBD', 'Kinship': 'KCs'}
 
 
 def collapse_spouse_to_others(df):
@@ -104,6 +105,14 @@ def collapse_spouse_to_others(df):
 def filter_comparison_markers(marker_list):
     selected = [m for m in marker_list if m in COMPARISON_MARKERS]
     return selected if selected else marker_list
+
+
+def filter_nfs_markers(marker_list):
+    return [m for m in marker_list if m.startswith('NFS_')]
+
+
+def _md(metric):
+    return DISPLAY_METRIC.get(metric, metric)
 
 # ============================================================
 # Config file loading
@@ -589,8 +598,8 @@ def plot_boxplot_by_degree_all(all_df, marker_set, output_path):
             n = len(data[data['DL'] == deg])
             ymin = data[m].min() - (data[m].max() - data[m].min()) * 0.1
             ax.annotate(f'n={n}', xy=(i, ymin), ha='center', va='top', fontsize=9, color='gray', style='italic')
-        ax.set_xlabel('Degree', fontsize=12); ax.set_ylabel(m, fontsize=12)
-        ax.set_title(f'{m}', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Degree', fontsize=12); ax.set_ylabel(_md(m), fontsize=12)
+        ax.set_title(f'{_md(m)}', fontsize=14, fontweight='bold')
         ax.tick_params(axis='x', rotation=45); ax.grid(axis='y', alpha=0.3)
     plt.suptitle(f'{marker_set} - Distribution by Degree', fontsize=16, fontweight='bold', y=1.02)
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
@@ -615,8 +624,8 @@ def plot_boxplot_by_relationship(all_df, marker_set, output_path):
             n = len(data[data['RL'] == label])
             ymin = data[m].min() - (data[m].max() - data[m].min()) * 0.08
             ax.annotate(f'n={n}', xy=(i, ymin), ha='center', va='top', fontsize=8, color='gray', style='italic')
-        ax.set_xlabel('Relationship', fontsize=12); ax.set_ylabel(m, fontsize=12)
-        ax.set_title(f'{m}', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Relationship', fontsize=12); ax.set_ylabel(_md(m), fontsize=12)
+        ax.set_title(f'{_md(m)}', fontsize=14, fontweight='bold')
         ax.tick_params(axis='x', rotation=45, labelsize=9); ax.grid(axis='y', alpha=0.3)
     plt.suptitle(f'{marker_set} - Distribution by Relationship', fontsize=16, fontweight='bold', y=1.02)
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
@@ -636,8 +645,8 @@ def plot_violin_by_relationship(all_df, marker_set, output_path):
         data = df.dropna(subset=[m])
         if len(data) == 0: continue
         sns.violinplot(data=data, x='RL', y=m, order=lo, palette=pal, ax=ax, inner='box', linewidth=1)
-        ax.set_xlabel('Relationship', fontsize=12); ax.set_ylabel(m, fontsize=12)
-        ax.set_title(f'{m}', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Relationship', fontsize=12); ax.set_ylabel(_md(m), fontsize=12)
+        ax.set_title(f'{_md(m)}', fontsize=14, fontweight='bold')
         ax.tick_params(axis='x', rotation=45, labelsize=9); ax.grid(axis='y', alpha=0.3)
     plt.suptitle(f'{marker_set} - Violin by Relationship', fontsize=16, fontweight='bold', y=1.02)
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
@@ -666,8 +675,8 @@ def plot_relationship_distribution_single(all_df, marker_set, metric, output_pat
     else:
         sns.violinplot(data=data, x='RL', y=metric, order=lo, palette=pal, ax=ax, inner='box', linewidth=1)
     ax.set_xlabel('Relationship', fontsize=12)
-    ax.set_ylabel(metric, fontsize=12)
-    ax.set_title(f'{marker_set} - {metric} ({kind.capitalize()} by Relationship)', fontsize=14, fontweight='bold')
+    ax.set_ylabel(_md(metric), fontsize=12)
+    ax.set_title(f'{marker_set} - {_md(metric)} ({kind.capitalize()} by Relationship)', fontsize=14, fontweight='bold')
     ax.tick_params(axis='x', rotation=30, labelsize=10)
     ax.grid(axis='y', alpha=0.3)
     plt.tight_layout()
@@ -698,13 +707,13 @@ def plot_heatmap_standard(all_df, marker_set, metric, output_path):
     mask = np.triu(np.ones_like(matrix, dtype=bool), k=1)
     sns.heatmap(matrix, mask=mask, cmap='RdYlBu_r', vmin=vmin, vmax=vmax,
                 square=True, linewidths=0.2, linecolor='white',
-                cbar_kws={'shrink': 0.6, 'label': metric}, ax=ax)
+                cbar_kws={'shrink': 0.6, 'label': _md(metric)}, ax=ax)
     labels = [f"{s.split('-')[1]}-{s.split('-')[2]}" if len(s.split('-')) >= 3 else s for s in samples]
     fs = max(4, min(8, 120 // n))
     ax.set_xticks(np.arange(n) + 0.5); ax.set_yticks(np.arange(n) + 0.5)
     ax.set_xticklabels(labels, rotation=90, ha='center', fontsize=fs)
     ax.set_yticklabels(labels, rotation=0, ha='right', fontsize=fs)
-    ax.set_title(f'{marker_set} - {metric}', fontsize=14, fontweight='bold')
+    ax.set_title(f'{marker_set} - {_md(metric)}', fontsize=14, fontweight='bold')
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
     print(f"    Saved: {output_path.name}")
 
@@ -732,11 +741,11 @@ def plot_heatmap_within_family(all_df, marker_set, metric, family, output_path):
     sns.heatmap(matrix, mask=mask, cmap='RdYlBu_r', vmin=vmin, vmax=vmax,
                 square=True, linewidths=0.5, linecolor='white',
                 annot=True, fmt='.3f', annot_kws={'size': 9},
-                cbar_kws={'shrink': 0.7, 'label': metric}, ax=ax)
+                cbar_kws={'shrink': 0.7, 'label': _md(metric)}, ax=ax)
     labels = [s.split('-')[-1] for s in samples]
     ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=11)
     ax.set_yticklabels(labels, rotation=0, fontsize=11)
-    ax.set_title(f'Family {family} - {marker_set} - {metric}', fontsize=13, fontweight='bold')
+    ax.set_title(f'Family {family} - {marker_set} - {_md(metric)}', fontsize=13, fontweight='bold')
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
 
 
@@ -805,7 +814,7 @@ def plot_roc_curves(all_df, scenario_name, pos_filter, neg_filter, title, marker
                         color=MARKER_COLORS.get(ms, 'gray'), linewidth=2)
         ax.plot([0,1],[0,1],'k--',alpha=0.5)
         ax.set_xlabel('FPR', fontsize=12); ax.set_ylabel('TPR', fontsize=12)
-        ax.set_title(f'{metric}', fontsize=14, fontweight='bold')
+        ax.set_title(f'{_md(metric)}', fontsize=14, fontweight='bold')
         ax.legend(loc='lower right', fontsize=8); ax.grid(alpha=0.3)
         ax.set_xlim(-0.02, 1.02); ax.set_ylim(-0.02, 1.02)
     plt.suptitle(f'ROC: {title}', fontsize=16, fontweight='bold', y=1.02)
@@ -822,7 +831,7 @@ def plot_auc_heatmap(roc_results, metric, marker_list, output_path):
     fig, ax = plt.subplots(figsize=(18, max(5, len(mo) * 1.15 + 2)))
     sns.heatmap(pivot, annot=True, fmt='.3f', cmap='RdYlGn', vmin=0.5, vmax=1.0,
                 ax=ax, linewidths=0.5, cbar_kws={'label':'AUC','shrink':0.8}, annot_kws={'size':9})
-    ax.set_title(f'{metric} - AUC by Scenario', fontsize=14, fontweight='bold')
+    ax.set_title(f'{_md(metric)} - AUC by Scenario', fontsize=14, fontweight='bold')
     ax.set_xlabel('Scenario'); ax.set_ylabel('Marker Set')
     plt.xticks(rotation=45, ha='right', fontsize=9)
     plt.yticks(rotation=20, ha='right', fontsize=10)
@@ -843,7 +852,7 @@ def plot_adjacent_discrimination(roc_results, marker_list, output_path):
         ax.set_xticks(range(len(adj)))
         ax.set_xticklabels(['1v2','2v3','3v4','4v5','5v6'], fontsize=10)
         ax.set_xlabel('Adjacent ()', fontsize=12); ax.set_ylabel('AUC', fontsize=12)
-        ax.set_title(f'{metric}', fontsize=14, fontweight='bold')
+        ax.set_title(f'{_md(metric)}', fontsize=14, fontweight='bold')
         ax.legend(loc='best', fontsize=8); ax.grid(alpha=0.3); ax.set_ylim(0.4, 1.05)
         ax.axhline(y=0.5, color='red', linestyle='--', alpha=0.5)
     plt.suptitle('Adjacent Degree Discrimination', fontsize=16, fontweight='bold', y=1.02)
@@ -866,8 +875,8 @@ def plot_scatter_expected_vs_observed(all_df, marker_set, output_path):
         if m == 'Kinship':
             lims = [min(ax.get_xlim()[0], ax.get_ylim()[0]), max(ax.get_xlim()[1], ax.get_ylim()[1])]
             ax.plot(lims, lims, 'k--', alpha=0.5)
-        ax.set_xlabel('Expected Kinship'); ax.set_ylabel(f'Observed {m}')
-        ax.set_title(f'{m}', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Expected KCs'); ax.set_ylabel(f'Observed {_md(m)}')
+        ax.set_title(f'{_md(m)}', fontsize=14, fontweight='bold')
         ax.legend(loc='lower right', fontsize=8, ncol=2); ax.grid(alpha=0.3)
     plt.suptitle(f'{marker_set} - Expected vs Observed', fontsize=16, fontweight='bold', y=1.02)
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
@@ -888,9 +897,9 @@ def plot_marker_comparison_overlay(all_df, marker_list, metric, output_path, tit
     sns.boxplot(data=data, x='DL', y=metric, hue='Marker_Set',
                 order=[f"{d}" for d in degrees], hue_order=marker_list, ax=ax,
                 palette={m: MARKER_COLORS.get(m,'gray') for m in marker_list}, width=0.8, linewidth=1)
-    ax.set_xlabel('Degree ()', fontsize=13); ax.set_ylabel(metric, fontsize=13)
+    ax.set_xlabel('Degree ()', fontsize=13); ax.set_ylabel(_md(metric), fontsize=13)
     suffix = f' ({title_suffix})' if title_suffix else ''
-    ax.set_title(f'Marker Comparison - {metric}{suffix}', fontsize=15, fontweight='bold')
+    ax.set_title(f'Marker Comparison - {_md(metric)}{suffix}', fontsize=15, fontweight='bold')
     ax.legend(title='Marker Set', loc='upper right', fontsize=8); ax.grid(axis='y', alpha=0.3)
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
     print(f"    Saved: {output_path.name}")
@@ -925,10 +934,10 @@ def generate_degree_summary_stats(all_df, marker_list, output_csv, output_plot):
         axes[0].errorbar(s['Degree'], s['Mean'], yerr=s['Std'], fmt='o-',
                          color=MARKER_COLORS.get(ms,'gray'), label=ms, linewidth=1.5, capsize=3, markersize=6)
         axes[1].plot(s['Degree'], s['CV'], 'o-', color=MARKER_COLORS.get(ms,'gray'), label=ms, linewidth=1.5, markersize=6)
-    axes[0].set_xlabel('Degree ()'); axes[0].set_ylabel('Kinship (Mean±Std)')
-    axes[0].set_title('Kinship by Degree', fontweight='bold'); axes[0].legend(fontsize=8); axes[0].grid(alpha=0.3)
+    axes[0].set_xlabel('Degree ()'); axes[0].set_ylabel('KCs (Mean±Std)')
+    axes[0].set_title('KCs by Degree', fontweight='bold'); axes[0].legend(fontsize=8); axes[0].grid(alpha=0.3)
     axes[1].set_xlabel('Degree ()'); axes[1].set_ylabel('CV')
-    axes[1].set_title('Kinship Variability', fontweight='bold'); axes[1].legend(fontsize=8); axes[1].grid(alpha=0.3)
+    axes[1].set_title('KCs Variability', fontweight='bold'); axes[1].legend(fontsize=8); axes[1].grid(alpha=0.3)
     plt.suptitle('Per-Degree Summary', fontsize=15, fontweight='bold', y=1.02)
     plt.tight_layout(); plt.savefig(output_plot, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
     print(f"    Saved: {output_plot.name}")
@@ -955,7 +964,7 @@ def plot_effect_size_adjacent(all_df, marker_list, output_path):
         ax.set_xticks(range(len(adj_pairs)))
         ax.set_xticklabels([f'{a}v{b}' for a,b in adj_pairs], fontsize=10)
         ax.set_xlabel('Adjacent Degrees ()'); ax.set_ylabel("Cohen's d")
-        ax.set_title(f'{metric}', fontsize=14, fontweight='bold')
+        ax.set_title(f'{_md(metric)}', fontsize=14, fontweight='bold')
         ax.legend(loc='best', fontsize=8); ax.grid(alpha=0.3)
         ax.axhline(y=0.8, color='green', linestyle='--', alpha=0.4)
         ax.axhline(y=0.5, color='orange', linestyle='--', alpha=0.4)
@@ -987,7 +996,7 @@ def plot_confusion_matrices(all_df, roc_results, marker_list, output_path):
         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax,
                     xticklabels=['Pred\nUnrel','Pred\nRel'], yticklabels=['Act\nUnrel','Act\nRel'])
         ax.set_title(f'{ms}\n(th={th:.4f})', fontsize=11, fontweight='bold')
-    plt.suptitle(f'Confusion Matrix: Related vs Unrelated ({metric})', fontsize=14, fontweight='bold', y=1.05)
+    plt.suptitle(f'Confusion Matrix: Related vs Unrelated ({_md(metric)})', fontsize=14, fontweight='bold', y=1.05)
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
     print(f"    Saved: {output_path.name}")
 
@@ -1022,7 +1031,7 @@ def generate_report(all_df, roc_results, marker_list, report_path):
             sdata = roc_results[roc_results['Scenario']==sn]
             if len(sdata) == 0: continue
             desc = sdata['Description'].iloc[0]
-            f.write(f"\n  [{desc}]\n  {'Marker':<15} {'IBS':>10} {'IBD':>10} {'Kinship':>10}\n  " + "-"*50 + "\n")
+            f.write(f"\n  [{desc}]\n  {'Marker':<15} {'IBS':>10} {'IBD':>10} {'KCs':>10}\n  " + "-"*50 + "\n")
             for mk in marker_list:
                 vals = {}
                 for m in ['IBS','IBD','Kinship']:
@@ -1031,7 +1040,7 @@ def generate_report(all_df, roc_results, marker_list, report_path):
                 f.write(f"  {mk:<15} {vals['IBS']:>10} {vals['IBD']:>10} {vals['Kinship']:>10}\n")
         f.write("\n\n5. OPTIMAL THRESHOLDS (Youden's J)\n" + "-"*80 + "\n")
         td = roc_results[roc_results['Scenario']=='related_vs_unrelated']
-        f.write(f"\n  [Related vs Unrelated]\n  {'Marker':<15} {'IBS':>12} {'IBD':>12} {'Kinship':>12}\n  " + "-"*55 + "\n")
+        f.write(f"\n  [Related vs Unrelated]\n  {'Marker':<15} {'IBS':>12} {'IBD':>12} {'KCs':>12}\n  " + "-"*55 + "\n")
         for mk in marker_list:
             vals = {}
             for m in ['IBS','IBD','Kinship']:
@@ -1070,9 +1079,11 @@ def step5_evaluate(args, gt_df=None):
     if not marker_list:
         print("  ERROR: No marker results found."); return
     comparison_marker_list = filter_comparison_markers(marker_list)
+    nfs_marker_list = filter_nfs_markers(comparison_marker_list)
     print(f"  Ground truth: {len(gt_df):,} pairs")
     print(f"  Marker sets: {marker_list}")
     print(f"  Comparison marker sets: {comparison_marker_list}")
+    print(f"  NFS-only marker sets: {nfs_marker_list}")
 
     # Load results
     print("\n[2] Loading results...")
@@ -1134,12 +1145,19 @@ def step5_evaluate(args, gt_df=None):
     for name, pos, neg, title in roc_scenarios:
         plot_roc_curves(all_df, name, pos, neg, title, comparison_marker_list, DR/f"roc_{name}.png")
         print(f"    Saved: roc_{name}.png")
+        if len(nfs_marker_list) > 1:
+            plot_roc_curves(all_df, name, pos, neg, f"{title} (NFS only)", nfs_marker_list, DR/f"roc_{name}_nfs_only.png")
+            print(f"    Saved: roc_{name}_nfs_only.png")
 
     # [9] AUC heatmap + Adjacent discrimination
     print("\n[9] Performance comparison...")
     for m in ['IBS','IBD','Kinship']:
         plot_auc_heatmap(roc_results, m, comparison_marker_list, DC/f"auc_heatmap_{m}.png")
+        if len(nfs_marker_list) > 1:
+            plot_auc_heatmap(roc_results, m, nfs_marker_list, DC/f"auc_heatmap_{m}_nfs_only.png")
     plot_adjacent_discrimination(roc_results, comparison_marker_list, DC/"adjacent_discrimination.png")
+    if len(nfs_marker_list) > 1:
+        plot_adjacent_discrimination(roc_results, nfs_marker_list, DC/"adjacent_discrimination_nfs_only.png")
     print(f"    Saved: adjacent_discrimination.png")
 
     # [10] Scatter
@@ -1152,6 +1170,9 @@ def step5_evaluate(args, gt_df=None):
     if len(comparison_marker_list) > 1:
         for m in ['IBS','IBD','Kinship']:
             plot_marker_comparison_overlay(all_df, comparison_marker_list, m, DC/f"marker_overlay_{m}.png")
+    if len(nfs_marker_list) > 1:
+        for m in ['IBS','IBD','Kinship']:
+            plot_marker_comparison_overlay(all_df, nfs_marker_list, m, DC/f"marker_overlay_{m}_nfs_only.png", title_suffix='NFS only')
 
     pair_specs = [
         (['NFS_12K', 'Kintelligence'], '12K vs Kintelligence', '12k_vs_kintelligence'),
@@ -1166,14 +1187,20 @@ def step5_evaluate(args, gt_df=None):
     # [12] NEW: Per-degree summary stats
     print("\n[12] Per-degree summary statistics...")
     generate_degree_summary_stats(all_df, comparison_marker_list, reports_dir/"degree_summary_stats.csv", DM/"degree_summary.png")
+    if len(nfs_marker_list) > 1:
+        generate_degree_summary_stats(all_df, nfs_marker_list, reports_dir/"degree_summary_stats_nfs_only.csv", DM/"degree_summary_nfs_only.png")
 
     # [13] NEW: Effect size
     print("\n[13] Effect size (Cohen's d)...")
     plot_effect_size_adjacent(all_df, comparison_marker_list, DM/"effect_size_adjacent.png")
+    if len(nfs_marker_list) > 1:
+        plot_effect_size_adjacent(all_df, nfs_marker_list, DM/"effect_size_adjacent_nfs_only.png")
 
     # [14] NEW: Confusion matrices
     print("\n[14] Confusion matrices...")
     plot_confusion_matrices(all_df, roc_results, comparison_marker_list, DM/"confusion_matrices.png")
+    if len(nfs_marker_list) > 0:
+        plot_confusion_matrices(all_df, roc_results, nfs_marker_list, DM/"confusion_matrices_nfs_only.png")
 
     # [15] Report
     print("\n[15] Generating report...")
@@ -1184,7 +1211,7 @@ def step5_evaluate(args, gt_df=None):
     print("SUMMARY: Related vs Unrelated (AUC)")
     print("=" * 70)
     sdf = roc_results[roc_results['Scenario']=='related_vs_unrelated']
-    print(f"\n{'Marker':<15} {'IBS':>10} {'IBD':>10} {'Kinship':>10}")
+    print(f"\n{'Marker':<15} {'IBS':>10} {'IBD':>10} {'KCs':>10}")
     print("-" * 50)
     for mk in marker_list:
         md = sdf[sdf['Marker_Set']==mk]

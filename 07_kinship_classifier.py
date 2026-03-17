@@ -94,6 +94,10 @@ def filter_comparison_markers(marker_list):
     selected = [m for m in marker_list if m in COMPARISON_MARKERS]
     return selected if selected else marker_list
 
+
+def filter_nfs_markers(marker_list):
+    return [m for m in marker_list if m.startswith('NFS_')]
+
 # ============================================================
 # 0. Data Prep
 # ============================================================
@@ -445,6 +449,7 @@ def plot_accuracy_by_relationship(radf,metric,path):
     print(f"    Saved: {path.name}")
 
 def plot_confusion_matrices(rdf,mlist,metric,outdir):
+    outdir=Path(outdir); outdir.mkdir(parents=True, exist_ok=True)
     pc=f'Pred_{metric}'
     for ms in mlist:
         df=rdf[rdf['Marker_Set']==ms].dropna(subset=[pc])
@@ -554,7 +559,7 @@ def plot_thresholds(cinfo,ms,metric,path):
                     drawn.add(th_r)
     ax.set_yticks(range(len(grps)))
     ax.set_yticklabels([_gd(g) for g in grps],fontsize=9)
-    ax.set_xlabel(metric,fontsize=12)
+    ax.set_xlabel(_md(metric),fontsize=12)
     ax.set_title(f'Classification Threshold of {ms} with {_md(metric)}',fontsize=12,fontweight='bold')
     ax.grid(axis='x',alpha=.3); ax.set_ylim(-1.5,len(grps)-0.3)
     plt.tight_layout(); plt.savefig(path,dpi=150,bbox_inches='tight',facecolor='white'); plt.close()
@@ -613,13 +618,13 @@ def generate_report(rdf,all_gadf,all_radf,all_mcdf,cinfo,mlist,rpath):
     with open(rpath,'w',encoding='utf-8') as f:
         f.write("="*100+"\nKINSHIP CLASSIFIER - EVALUATION REPORT (v7)\n"+"="*100+"\n\n")
         f.write("METHOD\n"+"-"*80+"\n")
-        f.write("  Per-metric classification (IBS, IBD, Kinship independently)\n")
+        f.write("  Per-metric classification (IBS, IBD, KCs independently)\n")
         f.write("  ROC-based thresholds: Youden's J (argmax TPR-FPR) per adjacent group pair\n")
         f.write("  2nd degree split: Sibling vs GP-GC\n")
         f.write("  Grand-Uncle-Nephew = 4th degree\n\n")
         for metric in METRICS:
             gadf=all_gadf[metric]; radf=all_radf[metric]; mcdf=all_mcdf[metric]
-            f.write(f"\n{'#'*100}\n  METRIC: {metric}\n{'#'*100}\n\n")
+            f.write(f"\n{'#'*100}\n  METRIC: {_md(metric)}\n{'#'*100}\n\n")
             f.write(f"  1. SUMMARY\n  "+"-"*70+"\n\n")
             for ms in mlist:
                 gc,dc=f'GroupCorrect_{metric}',f'DegCorrect_{metric}'
@@ -692,8 +697,10 @@ def main():
     marker_list=sorted(all_df['Marker_Set'].unique())
     ml=[m for m in marker_list if not is_nocancer(m)]
     ml_comp=filter_comparison_markers(ml)
+    ml_nfs=filter_nfs_markers(ml_comp)
     print(f"    {len(all_df):,} rows, {len(marker_list)} markers ({len(ml)} non-nocancer)")
     print(f"    Comparison markers: {', '.join(ml_comp)}")
+    print(f"    NFS-only markers: {', '.join(ml_nfs)}")
     print(f"\n[1b] Fixing degrees & adding groups...")
     all_df=fix_degree_labels(all_df)
 
@@ -729,10 +736,20 @@ def main():
         plot_confusion_matrices(rdf,ml_comp,metric,fdir)
         plot_misclassification_summary(all_mcdf[metric],metric,fdir/f"misclass_{metric}.png",include_markers=ml_comp)
         plot_forensic_scenarios(rdf,ml_comp,metric,fdir/f"forensic_{metric}.png")
+        if len(ml_nfs) > 1:
+            gadf_nfs=all_gadf[metric][all_gadf[metric]['Marker_Set'].isin(ml_nfs)]
+            radf_nfs=all_radf[metric][all_radf[metric]['Marker_Set'].isin(ml_nfs)]
+            plot_accuracy_heatmap_group(gadf_nfs,metric,fdir/f"heatmap_group_{metric}_nfs_only.png")
+            plot_accuracy_by_relationship(radf_nfs,metric,fdir/f"accuracy_rel_{metric}_nfs_only.png")
+            plot_confusion_matrices(rdf,ml_nfs,metric,fdir/"nfs_only")
+            plot_misclassification_summary(all_mcdf[metric],metric,fdir/f"misclass_{metric}_nfs_only.png",include_markers=ml_nfs)
+            plot_forensic_scenarios(rdf,ml_nfs,metric,fdir/f"forensic_{metric}_nfs_only.png")
         for ms in ml:
             plot_thresholds(cinfo,ms,metric,fdir/f"thresholds_{metric}_{ms}.png")
     print(f"\n  --- Metric comparison ---")
     plot_metric_comparison(rdf,ml_comp,fdir/"metric_comparison.png")
+    if len(ml_nfs) > 1:
+        plot_metric_comparison(rdf,ml_nfs,fdir/"metric_comparison_nfs_only.png",title_suffix='NFS only')
 
     pair_plots=[
         (['NFS_12K','Kintelligence'],'12K vs Kintelligence','metric_comparison_12k_vs_kintelligence.png'),
