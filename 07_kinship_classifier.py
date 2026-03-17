@@ -31,6 +31,7 @@ plt.rcParams.update({'axes.unicode_minus':False,'figure.dpi':150,
 
 METRICS = ['IBS','IBD','Kinship']
 COMPARISON_MARKERS = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K', 'Kintelligence', 'QIAseq']
+DISPLAY_METRIC = {'IBS': 'IBS', 'IBD': 'IBD', 'Kinship': 'KCs'}
 
 RELATIONSHIP_TO_DEGREE = {
     'Unrelated':0,'Spouse':0,'Parent-Child':1,
@@ -81,6 +82,13 @@ METRIC_COLORS = {'IBS':'#3498db','IBD':'#e74c3c','Kinship':'#2ecc71'}
 def is_nocancer(ms): return 'nocancer' in ms.lower()
 def _gd(g): return GROUP_DISPLAY.get(g,g)
 def _gs(g): return GROUP_DISPLAY_SHORT.get(g,g)
+def _md(metric): return DISPLAY_METRIC.get(metric, metric)
+
+def order_markers(marker_list):
+    preferred = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K', 'Kintelligence', 'QIAseq']
+    front = [m for m in preferred if m in marker_list]
+    tail = sorted([m for m in marker_list if m not in preferred])
+    return front + tail
 
 def filter_comparison_markers(marker_list):
     selected = [m for m in marker_list if m in COMPARISON_MARKERS]
@@ -374,8 +382,8 @@ def plot_accuracy_overall(rdf,marker_list,metric,fdir):
         if not ml_sub: continue
         summ=_summary(ml_sub)
         fig,axes=plt.subplots(1,2,figsize=(14,6))
-        for ax,col,title in [(axes[0],'All',f'[{metric}] All Pairs - {subtitle}'),
-                             (axes[1],'Related',f'[{metric}] Related Only - {subtitle}')]:
+        for ax,col,title in [(axes[0],'All',f'[{_md(metric)}] All Pairs - {subtitle}'),
+                             (axes[1],'Related',f'[{_md(metric)}] Related Only - {subtitle}')]:
             order=summ.sort_values(col,ascending=False)['Marker_Set'].tolist()
             vals=[summ[summ['Marker_Set']==m][col].values[0] for m in order]
             colors=[MARKER_COLORS.get(m,'#95a5a6') for m in order]
@@ -392,7 +400,7 @@ def plot_accuracy_overall(rdf,marker_list,metric,fdir):
         plt.close(); print(f"    Saved: accuracy_overall_{metric}_{suffix}.png")
 
 def plot_accuracy_heatmap_group(gadf,metric,path):
-    markers=sorted(gadf['Marker_Set'].unique())
+    markers=order_markers(list(gadf['Marker_Set'].unique()))
     groups=[g for g in GROUP_ORDER if g in gadf['Group'].values]
     pivot=gadf.pivot_table(index='Marker_Set',columns='Group',values='GroupAcc',aggfunc='first')
     pivot=pivot.reindex(index=markers,columns=groups)
@@ -403,7 +411,7 @@ def plot_accuracy_heatmap_group(gadf,metric,path):
     ax.set_xticklabels([_gd(g) for g in groups],rotation=25,ha='right',fontsize=9)
     ax.set_yticklabels(markers,rotation=0,fontsize=11)
     ax.set_xlabel('Classification Group'); ax.set_ylabel('Marker Set')
-    ax.set_title(f'[{metric}] Group Classification Accuracy',fontsize=13,fontweight='bold')
+    ax.set_title(f'[{_md(metric)}] Group Classification Accuracy',fontsize=13,fontweight='bold')
     plt.tight_layout(); plt.savefig(path,dpi=150,bbox_inches='tight',facecolor='white'); plt.close()
     print(f"    Saved: {path.name}")
 
@@ -413,7 +421,7 @@ def plot_accuracy_by_relationship(radf,metric,path):
     rel_order=['Parent-Child','Sibling','Grandparent-Grandchild','Uncle-Nephew',
                'Great-Grandparent','Cousin','Grand-Uncle-Nephew','Cousin-Once-Removed','Second-Cousin']
     rels=[r for r in rel_order if r in df['Relationship'].values]
-    mlist=sorted(df['Marker_Set'].unique())
+    mlist=order_markers(list(df['Marker_Set'].unique()))
     fig,ax=plt.subplots(figsize=(max(14,len(rels)*2),7))
     nm=len(mlist); bw=0.8/nm; x=np.arange(len(rels))
     for i,ms in enumerate(mlist):
@@ -430,7 +438,7 @@ def plot_accuracy_by_relationship(radf,metric,path):
     grpmap={r:df[df['Relationship']==r]['True_Group'].iloc[0] for r in rels}
     ax.set_xticklabels([f'{r}\n({_gs(grpmap.get(r,""))})' for r in rels],rotation=0,ha='center',fontsize=8)
     ax.set_ylabel('Group Classification Accuracy (%)'); ax.set_ylim(0,120)
-    ax.set_title(f'[{metric}] Classification Accuracy by Relationship',fontsize=13,fontweight='bold')
+    ax.set_title(f'[{_md(metric)}] Classification Accuracy by Relationship',fontsize=13,fontweight='bold')
     ax.legend(fontsize=8,ncol=2,loc='upper right'); ax.grid(axis='y',alpha=.3)
     ax.axhline(100,color='gray',ls='--',alpha=.3)
     plt.tight_layout(); plt.savefig(path,dpi=150,bbox_inches='tight',facecolor='white'); plt.close()
@@ -457,7 +465,7 @@ def plot_confusion_matrices(rdf,mlist,metric,outdir):
         axes[1].set_xlabel('Predicted'); axes[1].set_ylabel('True'); axes[1].set_title('Row-normalized (%)',fontweight='bold')
         plt.setp(axes[1].get_xticklabels(),rotation=30,ha='right',fontsize=8)
         plt.setp(axes[1].get_yticklabels(),rotation=0,fontsize=8)
-        plt.suptitle(f'[{metric}] Confusion Matrix - {ms}',fontsize=14,fontweight='bold',y=1.02)
+        plt.suptitle(f'[{_md(metric)}] Confusion Matrix - {ms}',fontsize=14,fontweight='bold',y=1.02)
         plt.tight_layout()
         plt.savefig(outdir/f"confusion_{metric}_{ms}.png",dpi=150,bbox_inches='tight',facecolor='white'); plt.close()
         print(f"    Saved: confusion_{metric}_{ms}.png")
@@ -484,7 +492,7 @@ def plot_misclassification_summary(mcdf,metric,path,include_markers=None):
                 ha='center',va='bottom',fontsize=7,fontweight='bold')
     ax.set_xticks(x); ax.set_xticklabels([_gd(g) for g in groups],fontsize=9,rotation=15,ha='right')
     ax.set_ylabel('# Misclassified Pairs')
-    ax.set_title(f'[{metric}] Misclassification by True Group',fontsize=12,fontweight='bold')
+    ax.set_title(f'[{_md(metric)}] Misclassification by True Group',fontsize=12,fontweight='bold')
     ax.legend(fontsize=9,ncol=2); ax.grid(axis='y',alpha=.3)
     plt.tight_layout(); plt.savefig(path,dpi=150,bbox_inches='tight',facecolor='white'); plt.close()
     print(f"    Saved: {path.name}")
@@ -502,7 +510,7 @@ def plot_forensic_scenarios(rdf,mlist,metric,path):
     ax.set_xticks(range(len(all_groups)))
     ax.set_xticklabels([_gd(g) for g in all_groups],rotation=15,ha='right',fontsize=9)
     ax.set_ylabel('Accuracy (%)'); ax.set_ylim(0,105); ax.grid(alpha=.3)
-    ax.set_title(f'[{metric}] Group Accuracy by Kinship Distance',fontsize=14,fontweight='bold')
+    ax.set_title(f'[{_md(metric)}] Group Accuracy by KC Distance',fontsize=14,fontweight='bold')
     ax.legend(fontsize=9,ncol=2)
     ax=axes[1]; da=[]
     for ms in mlist:
@@ -514,7 +522,7 @@ def plot_forensic_scenarios(rdf,mlist,metric,path):
     b2=ax.bar(x+w/2,da['Within1'],w,label='Within +/-1',color='#2ecc71',edgecolor='white')
     ax.set_xticks(x); ax.set_xticklabels(da['Marker_Set'],rotation=45,ha='right')
     ax.set_ylabel('Accuracy (%)'); ax.set_ylim(0,110); ax.grid(axis='y',alpha=.3)
-    ax.set_title(f'[{metric}] Extended Kinship (5-6th)',fontsize=14,fontweight='bold'); ax.legend(fontsize=11)
+    ax.set_title(f'[{_md(metric)}] Extended KC (5-6th)',fontsize=14,fontweight='bold'); ax.legend(fontsize=11)
     for b in list(b1)+list(b2):
         ax.annotate(f'{b.get_height():.0f}%',xy=(b.get_x()+b.get_width()/2,b.get_height()),
             ha='center',va='bottom',fontsize=9,fontweight='bold')
@@ -547,13 +555,13 @@ def plot_thresholds(cinfo,ms,metric,path):
     ax.set_yticks(range(len(grps)))
     ax.set_yticklabels([_gd(g) for g in grps],fontsize=9)
     ax.set_xlabel(metric,fontsize=12)
-    ax.set_title(f'Classification Threshold of {ms} with {metric}',fontsize=12,fontweight='bold')
+    ax.set_title(f'Classification Threshold of {ms} with {_md(metric)}',fontsize=12,fontweight='bold')
     ax.grid(axis='x',alpha=.3); ax.set_ylim(-1.5,len(grps)-0.3)
     plt.tight_layout(); plt.savefig(path,dpi=150,bbox_inches='tight',facecolor='white'); plt.close()
     print(f"    Saved: {path.name}")
 
 def plot_metric_comparison(rdf,marker_list,path,title_suffix=''):
-    mlist=[m for m in marker_list if not is_nocancer(m)]
+    mlist=order_markers([m for m in marker_list if not is_nocancer(m) and m!='NFS_20K'])
     rows=[]
     for ms in mlist:
         df=rdf[rdf['Marker_Set']==ms]
@@ -569,10 +577,11 @@ def plot_metric_comparison(rdf,marker_list,path,title_suffix=''):
     fig,axes=plt.subplots(1,2,figsize=(16,6.5))
     for ax,col,title in zip(axes,['All','Related'],['All Pairs','Related Only']):
         pv=mdf.pivot_table(index='Marker_Set',columns='Metric',values=col)
+        pv=pv.reindex(mlist)
         x=np.arange(len(pv)); w=0.25
         for i,m in enumerate(METRICS):
             if m in pv.columns:
-                bars=ax.bar(x+(i-1)*w,pv[m],w,label=m,color=METRIC_COLORS[m],edgecolor='white')
+                bars=ax.bar(x+(i-1)*w,pv[m],w,label=_md(m),color=METRIC_COLORS[m],edgecolor='white')
                 for b in bars:
                     ax.annotate(f'{b.get_height():.1f}',
                         xy=(b.get_x()+b.get_width()/2,b.get_height()+0.5),
