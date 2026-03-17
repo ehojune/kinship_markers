@@ -121,6 +121,29 @@ def normalize_marker_set_names(df):
     )
     return out
 
+
+def normalize_marker_set_names(df):
+    """Normalize marker names so comparison plots always include external panels.
+
+    Some combined CSV files use lowercase or variant names (e.g. "qiaseq",
+    "kintelligence"). Canonicalizing those names ensures COMPARISON markers are
+    detected consistently.
+    """
+    aliases = {
+        'nfs_36k': 'NFS_36K',
+        'nfs_24k': 'NFS_24K',
+        'nfs_20k': 'NFS_20K',
+        'nfs_12k': 'NFS_12K',
+        'nfs_6k': 'NFS_6K',
+        'kintelligence': 'Kintelligence',
+        'qiaseq': 'QIAseq',
+    }
+    out = df.copy()
+    out['Marker_Set'] = out['Marker_Set'].apply(
+        lambda x: aliases.get(str(x).strip().lower(), x)
+    )
+    return out
+
 # ============================================================
 # 0. Data Prep
 # ============================================================
