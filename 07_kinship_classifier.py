@@ -97,20 +97,20 @@ PLOT_MARKER_ORDER_NFS_ONLY = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K']
 PAIRWISE_MARKER_SETS = [('NFS_12K', 'Kintelligence'), ('NFS_6K', 'QIAseq')]
 
 MARKER_DISPLAY = {
-    'NFS_36K': '36K',
-    'NFS_24K': '24K',
-    'NFS_20K': '20K',
-    'NFS_12K': '12K',
-    'NFS_6K': '6K',
+    'NFS_36K': 'NFS_36K',
+    'NFS_24K': 'NFS_24K',
+    'NFS_20K': 'NFS_20K',
+    'NFS_12K': 'NFS_12K',
+    'NFS_6K': 'NFS_6K',
     'Kintelligence': 'Kintelligence',
     'QIAseq': 'QIAseq',
 }
 MARKER_FILEKEY = {
-    'NFS_36K': '36K',
-    'NFS_24K': '24K',
-    'NFS_20K': '20K',
-    'NFS_12K': '12K',
-    'NFS_6K': '6K',
+    'NFS_36K': 'NFS_36K',
+    'NFS_24K': 'NFS_24K',
+    'NFS_20K': 'NFS_20K',
+    'NFS_12K': 'NFS_12K',
+    'NFS_6K': 'NFS_6K',
     'Kintelligence': 'Kintelligence',
     'QIAseq': 'QIAseq',
 }
