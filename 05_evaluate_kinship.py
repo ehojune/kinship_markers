@@ -1,31 +1,14 @@
 #!/usr/bin/env python3
 """
-Kinship Analysis Unified Pipeline (v2)
-========================================
-Single command to run the entire post-joint-calling pipeline:
-  Step 3: Extract VCF subsets -> PLINK IBS/IBD -> KING kinship
-  Step 4: Generate ground truth from PED file
-  Step 5: Evaluate results and generate ALL figures + report
-
-Config file support (recommended):
-  python run_pipeline.py --families all --config markers.yaml
-
-CLI mode:
-  python run_pipeline.py --families all --36k beds/NFS_36K.bed --12k beds/NFS_12K.bed
-
-Resume:
-  python run_pipeline.py --families all --config markers.yaml --start-from 4
+Step 5: Evaluate kinship results
+================================
+Load existing Step 3 PLINK/KING outputs plus Step 4 ground truth, then generate
+combined result tables, ROC metrics, figures, and reports. Outputs are written
+under 07_evalutate_kinship by default. This step does not rerun PLINK or KING.
 """
 
 import argparse
-import subprocess
-import os
-import sys
-import json
-import textwrap
 from pathlib import Path
-from collections import defaultdict
-from itertools import combinations
 
 import pandas as pd
 import numpy as np
@@ -38,17 +21,10 @@ from scipy import stats
 import warnings
 warnings.filterwarnings('ignore')
 
-# ============================================================
-# Default paths
-# ============================================================
 HOME = Path.home()
-DEFAULT_WORK_DIR  = HOME / "kinship/Analysis/20251031_wgrs"
-DEFAULT_JOINT_VCF = DEFAULT_WORK_DIR / "05_jointcall/joint_called.allsites.vcf.gz"
-DEFAULT_PED_FILE  = DEFAULT_WORK_DIR / "full_pedigree.ped"
-DEFAULT_OUT_DIR   = DEFAULT_WORK_DIR / "06_kinship_analysis"
-
-ALL_FAMILIES = [1, 2, 4, 5, 6, 9, 10, 14, 15, 18]
-MEMBERS = ['1A', '2B', '3a', '4b', '5c', '6D', '7E', '8d', '9e', '10f']
+DEFAULT_WORK_DIR = HOME / "kinship/Analysis/20251031_wgrs"
+DEFAULT_ANALYSIS_DIR = DEFAULT_WORK_DIR / "06_kinship_analysis"
+DEFAULT_EVAL_DIR = DEFAULT_WORK_DIR / "07_evalutate_kinship"
 
 # ============================================================
 # Plotting Constants
@@ -113,413 +89,6 @@ def filter_nfs_markers(marker_list):
 
 def _md(metric):
     return DISPLAY_METRIC.get(metric, metric)
-
-# ============================================================
-# Config file loading
-# ============================================================
-def load_config(config_path):
-    """Load marker config from YAML or JSON.
-    YAML format:
-        markers:
-          NFS_36K: /path/to/NFS_36K.bed
-          Custom_Panel: /path/to/custom.bed
-    JSON format:
-        {"markers": {"NFS_36K": "/path/to/NFS_36K.bed"}}
-    """
-    config_path = Path(config_path)
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-    suffix = config_path.suffix.lower()
-    with open(config_path, 'r') as f:
-        if suffix in ('.yaml', '.yml'):
-            try:
-                import yaml
-                config = yaml.safe_load(f)
-            except ImportError:
-                config = _parse_simple_yaml(f)
-        elif suffix == '.json':
-            config = json.load(f)
-        else:
-            raise ValueError(f"Unsupported config format: {suffix}")
-    if 'markers' not in config:
-        raise ValueError("Config must have 'markers' key")
-    marker_sets = {}
-    _auto_colors = ['#16a085', '#8e44ad', '#2c3e50', '#d35400',
-                    '#c0392b', '#7f8c8d', '#1abc9c', '#e74c3c']
-    for name, bed_path in config['markers'].items():
-        p = Path(bed_path)
-        if not p.is_absolute():
-            p = config_path.parent / p
-        if not p.exists():
-            print(f"  WARNING: BED not found for {name}: {p}")
-            continue
-        marker_sets[name] = p
-        if name not in MARKER_COLORS:
-            idx = len(MARKER_COLORS) % len(_auto_colors)
-            MARKER_COLORS[name] = _auto_colors[idx]
-    return marker_sets
-
-
-def _parse_simple_yaml(file_obj):
-    """Minimal YAML parser (no PyYAML dependency)."""
-    file_obj.seek(0)
-    config = {}
-    current_section = None
-    for line in file_obj:
-        line = line.rstrip()
-        if not line or line.startswith('#'):
-            continue
-        stripped = line.lstrip()
-        indent = len(line) - len(stripped)
-        if stripped.endswith(':') and indent == 0:
-            current_section = stripped[:-1].strip()
-            config[current_section] = {}
-        elif current_section and ':' in stripped:
-            key, val = stripped.split(':', 1)
-            config[current_section][key.strip()] = val.strip()
-    return config
-
-
-# ============================================================
-# Argument Parsing
-# ============================================================
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description='Kinship Analysis Unified Pipeline (v2)',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=textwrap.dedent("""\
-        Examples:
-          python run_pipeline.py --families all --config markers.yaml
-          python run_pipeline.py --families all --36k beds/NFS_36K.bed --12k beds/NFS_12K.bed
-          python run_pipeline.py --families 1,2,5,6 --config markers.yaml --start-from 4
-        """))
-    parser.add_argument('--families', required=True,
-                        help='"all" or comma-separated (e.g. "1,2,5,6")')
-    parser.add_argument('--config', dest='config_file',
-                        help='YAML/JSON config with marker names and BED paths')
-    mg = parser.add_argument_group('Marker sets (CLI mode)')
-    mg.add_argument('--36k', dest='bed_36k', help='BED for NFS_36K')
-    mg.add_argument('--24k', dest='bed_24k', help='BED for NFS_24K')
-    mg.add_argument('--20k', dest='bed_20k', help='BED for NFS_20K')
-    mg.add_argument('--12k', dest='bed_12k', help='BED for NFS_12K')
-    mg.add_argument('--6k',  dest='bed_6k',  help='BED for NFS_6K')
-    mg.add_argument('--kintelligence', dest='bed_kintelligence', help='BED for Kintelligence')
-    mg.add_argument('--qiaseq', dest='bed_qiaseq', help='BED for QIAseq')
-    pg = parser.add_argument_group('Paths')
-    pg.add_argument('--joint-vcf', default=str(DEFAULT_JOINT_VCF))
-    pg.add_argument('--ped', default=str(DEFAULT_PED_FILE))
-    pg.add_argument('--outdir', default=str(DEFAULT_OUT_DIR))
-    eg = parser.add_argument_group('Execution')
-    eg.add_argument('--run-mode', choices=['qsub', 'local'], default='qsub')
-    eg.add_argument('--start-from', type=int, choices=[3, 4, 5], default=3)
-    eg.add_argument('--dry-run', action='store_true')
-    eg.add_argument('--threads', type=int, default=4)
-
-    args = parser.parse_args()
-    if args.families.lower() == 'all':
-        args.family_list = ALL_FAMILIES
-    else:
-        args.family_list = [int(f.strip()) for f in args.families.split(',')]
-
-    # Load marker sets: config > CLI
-    args.marker_sets = {}
-    if args.config_file:
-        args.marker_sets = load_config(args.config_file)
-    else:
-        cli = {'NFS_36K': args.bed_36k, 'NFS_24K': args.bed_24k, 'NFS_20K': args.bed_20k,
-               'NFS_12K': args.bed_12k, 'NFS_6K': args.bed_6k,
-               'Kintelligence': args.bed_kintelligence, 'QIAseq': args.bed_qiaseq}
-        for name, path in cli.items():
-            if path:
-                p = Path(path)
-                if not p.exists():
-                    parser.error(f"BED not found: {path}")
-                args.marker_sets[name] = p
-    if not args.marker_sets and args.start_from <= 3:
-        parser.error("Marker sets required (--config or --36k/--24k/...)")
-    args.marker_list = list(args.marker_sets.keys())
-    return args
-
-
-def get_sample_list(families):
-    samples = []
-    for fam in sorted(families):
-        for member in MEMBERS:
-            samples.append(f"2024-{fam:03d}-{member}")
-    return samples
-
-
-# ============================================================
-# Step 3: Kinship Analysis (VCF extract -> PLINK -> KING)
-# ============================================================
-def step3_kinship_analysis(args):
-    print("\n" + "=" * 70)
-    print("STEP 3: Kinship Analysis")
-    print("=" * 70)
-    outdir = Path(args.outdir)
-    vcf_dir, plink_dir = outdir / "vcf_subsets", outdir / "plink_files"
-    results_dir, scripts_dir, logs_dir = outdir / "results", outdir / "scripts", outdir / "logs"
-    for d in [vcf_dir, plink_dir, results_dir, scripts_dir, logs_dir]:
-        d.mkdir(parents=True, exist_ok=True)
-    joint_vcf = Path(args.joint_vcf)
-    samples = get_sample_list(args.family_list)
-    sample_file = outdir / "selected_samples.txt"
-    with open(sample_file, 'w') as f:
-        for s in samples:
-            f.write(s + '\n')
-    print(f"  Samples: {len(samples)} from families {args.family_list}")
-    job_names = []
-    for name, bed_path in args.marker_sets.items():
-        vcf_out = vcf_dir / f"{name}.vcf.gz"
-        plink_prefix = plink_dir / name
-        results_prefix = results_dir / name
-        script_content = f"""#!/bin/bash
-#$ -N kin_{name}
-#$ -o {logs_dir}/kin_{name}.out
-#$ -e {logs_dir}/kin_{name}.err
-#$ -cwd
-#$ -V
-#$ -pe smp {args.threads}
-
-echo "========================================"
-echo "Kinship Analysis: {name}"
-echo "========================================"
-echo "Start: $(date)"
-echo "Samples: {len(samples)}"
-echo "BED: {bed_path}"
-
-echo ""
-echo "[1/4] Extracting VCF subset..."
-bcftools view -S {sample_file} -R {bed_path} {joint_vcf} -Oz -o {vcf_out}
-tabix -p vcf {vcf_out}
-TOTAL=$(bcftools view -H {vcf_out} | wc -l)
-SNPS=$(bcftools view -H -v snps {vcf_out} | wc -l)
-echo "  Total sites: $TOTAL"
-echo "  SNP sites: $SNPS"
-
-echo ""
-echo "[2/4] Converting to PLINK format..."
-plink --vcf {vcf_out} \\
-      --make-bed \\
-      --out {plink_prefix} \\
-      --allow-extra-chr \\
-      --double-id \\
-      --set-missing-var-ids @:#:\\$1:\\$2 \\
-      --vcf-half-call m \\
-      2>&1 | tail -5
-echo "  Variants: $(wc -l < {plink_prefix}.bim)"
-echo "  Samples:  $(wc -l < {plink_prefix}.fam)"
-
-echo ""
-echo "[3/4] Calculating IBS/IBD..."
-plink --bfile {plink_prefix} \\
-      --genome \\
-      --out {results_prefix}_plink \\
-      --allow-extra-chr \\
-      2>&1 | tail -3
-echo "  Pairs: $(tail -n +2 {results_prefix}_plink.genome | wc -l)"
-
-echo ""
-echo "[4/4] Calculating Kinship (KING)..."
-king -b {plink_prefix}.bed \\
-     --kinship \\
-     --prefix {results_prefix}_king \\
-     2>&1 | tail -5
-if [ -f {results_prefix}_king.kin0 ]; then
-    echo "  Pairs: $(tail -n +2 {results_prefix}_king.kin0 | wc -l)"
-else
-    echo "  WARNING: KING .kin0 not found"
-fi
-echo ""
-echo "Completed: {name}"
-echo "End: $(date)"
-"""
-        script_path = scripts_dir / f"kin_{name}.sh"
-        with open(script_path, 'w') as f:
-            f.write(script_content)
-        os.chmod(script_path, 0o755)
-        job_names.append(f"kin_{name}")
-        if args.run_mode == 'qsub':
-            if not args.dry_run:
-                result = subprocess.run(f"qsub {script_path}", shell=True, capture_output=True, text=True)
-                print(f"  Submitted: {name} -> {result.stdout.strip()}")
-            else:
-                print(f"  [DRY-RUN] qsub {script_path}")
-        else:
-            print(f"  Running {name} locally...")
-            if not args.dry_run:
-                ret = os.system(f"bash {script_path}")
-                if ret != 0:
-                    print(f"  !! ERROR running {name}")
-                    return None
-    return job_names
-
-
-# ============================================================
-# Step 4: Ground Truth Generation (FIXED)
-# ============================================================
-class FamilyTree:
-    """Pedigree relationship inference with corrected kinship coefficients.
-    Fixes: Grand-Uncle-Nephew=4, LCA path multiplier in Wright's formula,
-    GP/GM virtual samples excluded."""
-    def __init__(self, family_id):
-        self.family_id = family_id
-        self.members = {}
-        self.children = defaultdict(list)
-
-    def add_member(self, member_id, father_id, mother_id, sex):
-        self.members[member_id] = {
-            'father': father_id if father_id else None,
-            'mother': mother_id if mother_id else None, 'sex': sex}
-        if father_id:
-            self.children[father_id].append(member_id)
-        if mother_id:
-            self.children[mother_id].append(member_id)
-
-    def get_parents(self, member_id):
-        if member_id not in self.members:
-            return []
-        m = self.members[member_id]
-        return [p for p in [m['father'], m['mother']] if p]
-
-    def get_all_ancestors(self, member_id, max_depth=10):
-        ancestors = {}
-        def _trace(cid, depth):
-            if depth > max_depth:
-                return
-            for pid in self.get_parents(cid):
-                if pid not in ancestors or ancestors[pid] > depth:
-                    ancestors[pid] = depth
-                    _trace(pid, depth + 1)
-        _trace(member_id, 1)
-        return ancestors
-
-    def find_all_lcas(self, id1, id2):
-        if id1 == id2:
-            return [(id1, 0, 0)]
-        a1 = self.get_all_ancestors(id1); a1[id1] = 0
-        a2 = self.get_all_ancestors(id2); a2[id2] = 0
-        common = set(a1) & set(a2)
-        if not common:
-            return []
-        min_total = min(a1[a] + a2[a] for a in common)
-        return [(a, a1[a], a2[a]) for a in common if a1[a] + a2[a] == min_total]
-
-    def get_relationship(self, id1, id2):
-        """Returns (name, chon, wright_kinship). phi = n_paths * (1/2)^(d1+d2+1)"""
-        if id1 == id2:
-            return ("Self", 0, 0.5)
-        common_children = set(self.children.get(id1, [])) & set(self.children.get(id2, []))
-        lcas = self.find_all_lcas(id1, id2)
-        if not lcas:
-            return ("Spouse", 0, 0.0) if common_children else ("Unrelated", 0, 0.0)
-        _, d1, d2 = lcas[0]
-        n_paths = len(lcas)
-        chon = d1 + d2
-        kinship = n_paths * (0.5) ** (d1 + d2 + 1)
-        if d1 == 0 or d2 == 0:
-            names = {1: "Parent-Child", 2: "Grandparent-Grandchild", 3: "Great-Grandparent"}
-            rel = names.get(chon, f"Direct-{chon}")
-        elif (d1, d2) == (1, 1):
-            rel = "Sibling"
-        elif sorted([d1, d2]) == [1, 2]:
-            rel = "Uncle-Nephew"
-        elif (d1, d2) == (2, 2):
-            rel = "Cousin"
-        elif sorted([d1, d2]) == [1, 3]:
-            rel = "Grand-Uncle-Nephew"
-        elif sorted([d1, d2]) == [2, 3]:
-            rel = "Cousin-Once-Removed"
-        elif (d1, d2) == (3, 3):
-            rel = "Second-Cousin"
-        elif sorted([d1, d2]) == [1, 4]:
-            rel = "Great-Grand-Uncle"
-        elif sorted([d1, d2]) == [2, 4]:
-            rel = "Cousin-Twice-Removed"
-        else:
-            rel = f"Distant-{chon}"
-        return (rel, chon, kinship)
-
-
-def step4_ground_truth(args):
-    print("\n" + "=" * 70)
-    print("STEP 4: Ground Truth Generation")
-    print("=" * 70)
-    ped_path = Path(args.ped)
-    if not ped_path.exists():
-        print(f"  ERROR: PED file not found: {ped_path}")
-        return None
-    families = {}
-    with open(ped_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            fields = line.split('\t') if '\t' in line else line.split()
-            if len(fields) < 5:
-                continue
-            fam_id, ind_id = fields[0], fields[1]
-            fam_num = int(fam_id.replace('FAM', '').replace('fam', ''))
-            if fam_num not in args.family_list:
-                continue
-            father = fields[2] if fields[2] and fields[2] != '0' else None
-            mother = fields[3] if fields[3] and fields[3] != '0' else None
-            sex = int(fields[4]) if fields[4].isdigit() else 0
-            if fam_id not in families:
-                families[fam_id] = FamilyTree(fam_id)
-            families[fam_id].add_member(ind_id, father, mother, sex)
-    print(f"  Families loaded: {len(families)}")
-    for fid in sorted(families):
-        n_seq = sum(1 for m in families[fid].members if 'GP' not in m and 'GM' not in m)
-        print(f"    {fid}: {n_seq} sequenced members")
-    results = []
-    for fam_id, tree in families.items():
-        seq_members = [m for m in tree.members if 'GP' not in m and 'GM' not in m]
-        for id1, id2 in combinations(seq_members, 2):
-            rel, chon, ek = tree.get_relationship(id1, id2)
-            p1, p2 = id1.split('-'), id2.split('-')
-            results.append({
-                'Sample1': id1, 'Sample2': id2,
-                'Family1': int(p1[1]), 'Family2': int(p2[1]),
-                'Member1': p1[2], 'Member2': p2[2],
-                'Relationship': rel, 'Degree': chon,
-                'Expected_Kinship': ek, 'Same_Family': True, 'Is_Related': chon > 0})
-    fam_ids = list(families.keys())
-    for i, f1 in enumerate(fam_ids):
-        for f2 in fam_ids[i+1:]:
-            m1s = [m for m in families[f1].members if 'GP' not in m and 'GM' not in m]
-            m2s = [m for m in families[f2].members if 'GP' not in m and 'GM' not in m]
-            for id1 in m1s:
-                for id2 in m2s:
-                    p1, p2 = id1.split('-'), id2.split('-')
-                    results.append({
-                        'Sample1': id1, 'Sample2': id2,
-                        'Family1': int(p1[1]), 'Family2': int(p2[1]),
-                        'Member1': p1[2], 'Member2': p2[2],
-                        'Relationship': 'Unrelated', 'Degree': 0,
-                        'Expected_Kinship': 0.0, 'Same_Family': False, 'Is_Related': False})
-    gt_df = pd.DataFrame(results)
-    outdir = Path(args.outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
-    gt_path = outdir / "family_relationships.csv"
-    gt_df.to_csv(gt_path, index=False)
-    n_related = len(gt_df[gt_df['Is_Related']])
-    print(f"\n  Total pairs: {len(gt_df):,}")
-    print(f"  Related pairs: {n_related}")
-    print(f"  Saved: {gt_path}")
-    print(f"\n  {'Degree':>6} {'Count':>6}  Relationships")
-    print("  " + "-" * 50)
-    for deg in sorted(gt_df['Degree'].unique()):
-        sub = gt_df[gt_df['Degree'] == deg]
-        rels = sub.groupby('Relationship').size()
-        rel_str = ", ".join(f"{r}({n})" for r, n in rels.items())
-        print(f"  {deg:>4} {len(sub):>6}  {rel_str}")
-    return gt_df
-
-
-# ============================================================
-# Step 5: Data Loading
-# ============================================================
 def load_plink_genome(filepath):
     if not filepath.exists():
         return None
@@ -1058,16 +627,17 @@ def step5_evaluate(args, gt_df=None):
     print("\n" + "=" * 70)
     print("STEP 5: Evaluation")
     print("=" * 70)
-    outdir = Path(args.outdir)
-    results_dir = outdir / "results"
-    fig_dir = outdir / "figures"
-    reports_dir = outdir / "reports"
+    analysis_dir = Path(args.analysis_dir)
+    eval_dir = Path(args.eval_dir)
+    results_dir = analysis_dir / "results"
+    fig_dir = eval_dir / "figures"
+    reports_dir = eval_dir / "reports"
     DD = fig_dir/"distributions"; DH = fig_dir/"heatmaps"; DR = fig_dir/"roc_curves"
     DS = fig_dir/"scatter"; DC = fig_dir/"comparison"; DM = fig_dir/"summary"
     for d in [DD, DH, DR, DS, DC, DM, reports_dir]:
         d.mkdir(parents=True, exist_ok=True)
     if gt_df is None:
-        gt_path = outdir / "family_relationships.csv"
+        gt_path = analysis_dir / "family_relationships.csv"
         if not gt_path.exists():
             print(f"  ERROR: {gt_path} not found. Run step 4 first."); return
         gt_df = pd.read_csv(gt_path)
@@ -1093,12 +663,12 @@ def step5_evaluate(args, gt_df=None):
         print(f"  {ms}: {merged['IBS'].notna().sum():,} pairs with data")
         all_res.append(merged)
     all_df = pd.concat(all_res, ignore_index=True)
-    all_df.to_csv(outdir / "all_results_combined.csv", index=False)
+    all_df.to_csv(eval_dir / "all_results_combined.csv", index=False)
 
     # ROC
     print("\n[3] Calculating ROC metrics...")
     roc_results = calculate_all_roc_scenarios(all_df, marker_list)
-    roc_results.to_csv(outdir / "roc_results.csv", index=False)
+    roc_results.to_csv(eval_dir / "roc_results.csv", index=False)
 
     print("\n" + "=" * 70)
     print("GENERATING FIGURES")
@@ -1220,99 +790,36 @@ def step5_evaluate(args, gt_df=None):
             r = md[md['Metric']==m]['AUC'].values
             vals[m] = f"{r[0]:.4f}" if len(r)>0 and pd.notna(r[0]) else "N/A"
         print(f"{mk:<15} {vals['IBS']:>10} {vals['IBD']:>10} {vals['Kinship']:>10}")
-    print(f"\nAll outputs in: {outdir}")
+    print(f"\nStep 5 outputs in: {eval_dir}")
 
 
-# ============================================================
-# qsub chain helper
-# ============================================================
-def create_eval_script(args):
-    outdir = Path(args.outdir)
-    scripts_dir = outdir / "scripts"; logs_dir = outdir / "logs"
-    scripts_dir.mkdir(parents=True, exist_ok=True); logs_dir.mkdir(parents=True, exist_ok=True)
-    this_script = os.path.abspath(__file__)
-    families_str = ','.join(str(f) for f in args.family_list)
-    marker_args = []
-    if args.config_file:
-        marker_args.append(f"--config {args.config_file}")
-    else:
-        mm = {'--36k': args.bed_36k, '--24k': args.bed_24k, '--20k': args.bed_20k,
-              '--12k': args.bed_12k, '--6k': args.bed_6k,
-              '--kintelligence': args.bed_kintelligence, '--qiaseq': args.bed_qiaseq}
-        for flag, val in mm.items():
-            if val: marker_args.append(f"{flag} {val}")
-    marker_args_str = " \\\n    ".join(marker_args) if marker_args else ""
-    script_content = f"""#!/bin/bash
-#$ -N eval_kinship
-#$ -o {logs_dir}/eval_kinship.out
-#$ -e {logs_dir}/eval_kinship.err
-#$ -cwd
-#$ -V
-#$ -pe smp 2
-
-echo "Steps 4+5: Ground Truth + Evaluation"
-echo "Start: $(date)"
-
-python3 {this_script} \\
-    --families {families_str} \\
-    {marker_args_str} \\
-    --joint-vcf {args.joint_vcf} \\
-    --ped {args.ped} \\
-    --outdir {args.outdir} \\
-    --start-from 4 \\
-    --run-mode local
-
-echo "End: $(date)"
-"""
-    script_path = scripts_dir / "eval_kinship.sh"
-    with open(script_path, 'w') as f:
-        f.write(script_content)
-    os.chmod(script_path, 0o755)
-    return script_path
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Step 5: evaluate existing Step 3/4 kinship outputs without rerunning PLINK/KING')
+    parser.add_argument('--analysis-dir', '--outdir', dest='analysis_dir', default=str(DEFAULT_ANALYSIS_DIR),
+                        help='Directory containing Step 3/4 outputs (default: 06_kinship_analysis)')
+    parser.add_argument('--eval-dir', default=str(DEFAULT_EVAL_DIR),
+                        help='Directory for Step 5 outputs (default: 07_evalutate_kinship)')
+    parser.add_argument('--markers', nargs='+', default=None,
+                        help='Optional marker set order/list. If omitted, markers are inferred from *_plink.genome files.')
+    args = parser.parse_args()
+    args.marker_list = args.markers or []
+    return args
 
 
-# ============================================================
-# MAIN
-# ============================================================
 def main():
     args = parse_args()
     print("=" * 70)
-    print("KINSHIP ANALYSIS UNIFIED PIPELINE (v2)")
+    print("STEP 5: EVALUATE KINSHIP RESULTS")
     print("=" * 70)
-    print(f"  Families: {args.family_list}")
-    print(f"  Marker sets: {args.marker_list}")
-    print(f"  Joint VCF: {args.joint_vcf}")
-    print(f"  PED file: {args.ped}")
-    print(f"  Output: {args.outdir}")
-    print(f"  Run mode: {args.run_mode}")
-    print(f"  Start from: Step {args.start_from}")
-    if args.dry_run: print(f"  *** DRY RUN ***")
-
-    if args.start_from <= 3:
-        kin_job_names = step3_kinship_analysis(args)
-        if args.run_mode == 'qsub' and not args.dry_run and kin_job_names:
-            eval_script = create_eval_script(args)
-            hold_jid = ','.join(kin_job_names)
-            result = subprocess.run(f"qsub -hold_jid {hold_jid} {eval_script}", shell=True, capture_output=True, text=True)
-            print(f"\n  Submitted eval job (depends on {hold_jid}): {result.stdout.strip()}")
-            print(f"  Monitor: qstat")
-            print(f"  Logs: {Path(args.outdir)/'logs'}")
-            return
-        elif args.run_mode == 'qsub' and args.dry_run:
-            eval_script = create_eval_script(args)
-            hold_jid = ','.join(kin_job_names) if kin_job_names else 'kin_*'
-            print(f"\n  [DRY-RUN] qsub -hold_jid {hold_jid} {eval_script}")
-            return
-
-    gt_df = None
-    if args.start_from <= 4:
-        gt_df = step4_ground_truth(args)
-    if args.start_from <= 5:
-        step5_evaluate(args, gt_df)
-
-    print("\n" + "=" * 70)
-    print("PIPELINE COMPLETE")
-    print("=" * 70)
+    print(f"  Step 3/4 input: {args.analysis_dir}")
+    print(f"  Step 5 output: {args.eval_dir}")
+    if args.marker_list:
+        print(f"  Marker sets: {args.marker_list}")
+    else:
+        print("  Marker sets: inferred from Step 3 results")
+    step5_evaluate(args)
+    print("\nSTEP 5 COMPLETE")
 
 
 if __name__ == "__main__":
