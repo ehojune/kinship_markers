@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Kinship Relationship Classifier & Evaluator (Step 7) - v8
+Kinship Relationship Classifier & Evaluator (Step 6) - v8
 ==========================================================
 Per-metric classifier with ROC-based thresholds (Youden's J):
   - Each metric (IBS, IBD, Kinship) classifies independently
@@ -10,8 +10,8 @@ Per-metric classifier with ROC-based thresholds (Youden's J):
   - Grand-Uncle-Nephew = 4th degree
 
 Usage:
-  python 07_kinship_classifier.py --results-dir /path/to/06_kinship_analysis
-  python 07_kinship_classifier.py --combined-csv all_results_combined.csv
+  python 06_kinship_classifier.py --eval-dir /path/to/06_kinship_analysis/07_evaluate_kinship
+  python 06_kinship_classifier.py --combined-csv all_results_combined.csv
 """
 
 import argparse, sys
@@ -30,6 +30,11 @@ plt.rcParams.update({'axes.unicode_minus':False,'figure.dpi':150,
                      'figure.facecolor':'white','font.family':'DejaVu Sans'})
 
 METRICS = ['IBS','IBD','Kinship']
+
+DEFAULT_ANALYSIS_DIR = Path('/mnt/d/Research/20251031_wgrs/06_kinship_analysis')
+DEFAULT_EVAL_SUBDIR = '07_evaluate_kinship'
+DEFAULT_CLASSIFIER_SUBDIR = '06_kinship_classifier'
+COMBINED_CSV_NAME = 'all_results_combined.csv'
 COMPARISON_MARKERS = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K', 'Kintelligence', 'QIAseq']
 
 RELATIONSHIP_TO_DEGREE = {
@@ -66,7 +71,7 @@ GROUP_TO_DEGREE = {
     'G3_3rd':3,'G4_4th':4,'G5_5th':5,'G6_6th':6
 }
 MARKER_COLORS = {
-    'NFS_36K':'#1a5276','NFS_24K':'#2874a6','NFS_20K':'#3498db',
+    'NFS_36K':'#1a5276','NFS_24K':'#2874a6',
     'NFS_12K':'#e74c3c','NFS_6K':'#9b59b6',
     'Kintelligence':'#27ae60','QIAseq':'#f39c12'
 }
@@ -99,7 +104,6 @@ PAIRWISE_MARKER_SETS = [('NFS_12K', 'Kintelligence'), ('NFS_6K', 'QIAseq')]
 MARKER_DISPLAY = {
     'NFS_36K': 'NFS_36K',
     'NFS_24K': 'NFS_24K',
-    'NFS_20K': 'NFS_20K',
     'NFS_12K': 'NFS_12K',
     'NFS_6K': 'NFS_6K',
     'Kintelligence': 'Kintelligence',
@@ -108,7 +112,6 @@ MARKER_DISPLAY = {
 MARKER_FILEKEY = {
     'NFS_36K': 'NFS_36K',
     'NFS_24K': 'NFS_24K',
-    'NFS_20K': 'NFS_20K',
     'NFS_12K': 'NFS_12K',
     'NFS_6K': 'NFS_6K',
     'Kintelligence': 'Kintelligence',
@@ -924,25 +927,56 @@ def generate_report(rdf, all_gadf, all_radf, all_mcdf, cinfo, mlist, rpath):
 # Main
 # ============================================================
 
-def main():
-    parser = argparse.ArgumentParser(description='Kinship Classifier v8 (per-metric, ROC Youden)')
-    parser.add_argument('--results-dir', type=str)
-    parser.add_argument('--combined-csv', type=str)
-    parser.add_argument('--output-dir', type=str, default=None)
-    args = parser.parse_args()
-
+def resolve_combined_csv(args):
+    """Resolve Step 5's combined result table from explicit or pipeline paths."""
     if args.combined_csv:
-        cpath = Path(args.combined_csv)
-    elif args.results_dir:
-        cpath = Path(args.results_dir) / "all_results_combined.csv"
+        candidates = [Path(args.combined_csv)]
     else:
-        cpath = Path.home() / "kinship/Analysis/20251031_wgrs/06_kinship_analysis/all_results_combined.csv"
-    if not cpath.exists():
-        print(f"ERROR: {cpath} not found")
-        sys.exit(1)
+        analysis_dir = Path(args.analysis_dir) if args.analysis_dir else DEFAULT_ANALYSIS_DIR
+        eval_dir = Path(args.eval_dir) if args.eval_dir else analysis_dir / DEFAULT_EVAL_SUBDIR
+        candidates = [
+            eval_dir / COMBINED_CSV_NAME,
+            analysis_dir / DEFAULT_EVAL_SUBDIR / COMBINED_CSV_NAME,
+            analysis_dir / COMBINED_CSV_NAME,
+        ]
 
-    print("=" * 70 + "\nKINSHIP CLASSIFIER v8 (per-metric, ROC-based thresholds)\n" + "=" * 70)
-    print(f"\n[1] Loading: {cpath}")
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    checked = "\n  - ".join(str(c) for c in candidates)
+    print(f"ERROR: {COMBINED_CSV_NAME} not found. Checked:\n  - {checked}")
+    sys.exit(1)
+
+
+def resolve_output_dir(args, cpath):
+    """Resolve classifier output directory under Step 5 outputs by default."""
+    if args.output_dir:
+        return Path(args.output_dir)
+    return cpath.parent / DEFAULT_CLASSIFIER_SUBDIR
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Step 6: classify Step 5 kinship evaluation results with per-metric ROC thresholds')
+    parser.add_argument('--analysis-dir', '--results-dir', dest='analysis_dir', type=str,
+                        default=str(DEFAULT_ANALYSIS_DIR),
+                        help='Pipeline analysis directory containing 07_evaluate_kinship (default: %(default)s)')
+    parser.add_argument('--eval-dir', type=str, default=None,
+                        help='Step 5 evaluation output directory containing all_results_combined.csv')
+    parser.add_argument('--combined-csv', type=str,
+                        help='Explicit Step 5 all_results_combined.csv path')
+    parser.add_argument('--output-dir', type=str, default=None,
+                        help='Classifier output directory (default: <eval-dir>/06_kinship_classifier)')
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    cpath = resolve_combined_csv(args)
+
+    print("=" * 70 + "\nSTEP 6: KINSHIP CLASSIFIER v8 (per-metric, ROC-based thresholds)\n" + "=" * 70)
+    print(f"\n[1] Loading Step 5 combined results: {cpath}")
     all_df = pd.read_csv(cpath)
     all_df = normalize_marker_names(all_df)
     marker_list = ordered_marker_list(all_df['Marker_Set'].dropna().unique())
@@ -955,11 +989,7 @@ def main():
     print(f"\n[1b] Fixing degrees & adding groups...")
     all_df = fix_degree_labels(all_df)
 
-    outdir = (
-        Path(args.output_dir) if args.output_dir else
-        Path(args.results_dir) / "classifier" if args.results_dir else
-        cpath.parent / "classifier"
-    )
+    outdir = resolve_output_dir(args, cpath)
     fdir, tdir = outdir / "figures", outdir / "tables"
     for d in [outdir, fdir, tdir]:
         d.mkdir(parents=True, exist_ok=True)
