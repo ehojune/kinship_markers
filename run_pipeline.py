@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 """
-Kinship Analysis Unified Pipeline (v2)
+Kinship Analysis Unified Pipeline (v3)
 ========================================
-Single command to run the entire post-joint-calling pipeline:
+Single command to run the post-joint-calling pipeline as three local steps:
   Step 3: Extract VCF subsets -> PLINK IBS/IBD -> KING kinship
+          outputs to 06_kinship_analysis
   Step 4: Generate ground truth from PED file
-  Step 5: Evaluate results and generate ALL figures + report
+          outputs to 06_kinship_analysis
+  Step 5: Evaluate existing Step 3/4 results and generate figures + report
+          outputs to 07_evalutate_kinship
 
-Config file support (recommended):
+Config file support (recommended for Step 3):
   python run_pipeline.py --families all --config markers.yaml
 
-CLI mode:
+CLI mode for Step 3:
   python run_pipeline.py --families all --36k beds/NFS_36K.bed --12k beds/NFS_12K.bed
 
-Resume:
-  python run_pipeline.py --families all --config markers.yaml --start-from 4
+Resume without rerunning PLINK/KING:
+  python run_pipeline.py --families all --start-from 5
 """
 
 import argparse
@@ -45,7 +48,8 @@ HOME = Path.home()
 DEFAULT_WORK_DIR  = HOME / "kinship/Analysis/20251031_wgrs"
 DEFAULT_JOINT_VCF = DEFAULT_WORK_DIR / "05_jointcall/joint_called.allsites.vcf.gz"
 DEFAULT_PED_FILE  = DEFAULT_WORK_DIR / "full_pedigree.ped"
-DEFAULT_OUT_DIR   = DEFAULT_WORK_DIR / "06_kinship_analysis"
+DEFAULT_ANALYSIS_DIR = DEFAULT_WORK_DIR / "06_kinship_analysis"
+DEFAULT_EVAL_DIR     = DEFAULT_WORK_DIR / "07_evalutate_kinship"
 
 ALL_FAMILIES = [1, 2, 4, 5, 6, 9, 10, 14, 15, 18]
 MEMBERS = ['1A', '2B', '3a', '4b', '5c', '6D', '7E', '8d', '9e', '10f']
@@ -185,13 +189,18 @@ def _parse_simple_yaml(file_obj):
 # ============================================================
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Kinship Analysis Unified Pipeline (v2)',
+        description='Kinship Analysis Unified Pipeline (v3, local execution only)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
         Examples:
+          # Step 3+4+5: generate kinship inputs in 06_kinship_analysis and evaluation in 07_evalutate_kinship
           python run_pipeline.py --families all --config markers.yaml
-          python run_pipeline.py --families all --36k beds/NFS_36K.bed --12k beds/NFS_12K.bed
-          python run_pipeline.py --families 1,2,5,6 --config markers.yaml --start-from 4
+
+          # Step 4+5 only: reuse existing PLINK/KING outputs
+          python run_pipeline.py --families all --start-from 4
+
+          # Step 5 only: regenerate figures/reports without rerunning PLINK/KING or ground truth
+          python run_pipeline.py --families all --start-from 5
         """))
     parser.add_argument('--families', required=True,
                         help='"all" or comma-separated (e.g. "1,2,5,6")')
@@ -208,14 +217,24 @@ def parse_args():
     pg = parser.add_argument_group('Paths')
     pg.add_argument('--joint-vcf', default=str(DEFAULT_JOINT_VCF))
     pg.add_argument('--ped', default=str(DEFAULT_PED_FILE))
-    pg.add_argument('--outdir', default=str(DEFAULT_OUT_DIR))
+    pg.add_argument('--analysis-dir', default=None,
+                    help='Directory for Step 3/4 outputs (default: 06_kinship_analysis)')
+    pg.add_argument('--eval-dir', default=None,
+                    help='Directory for Step 5 outputs (default: 07_evalutate_kinship)')
+    pg.add_argument('--outdir', default=None,
+                    help='Backward-compatible alias for --analysis-dir')
     eg = parser.add_argument_group('Execution')
-    eg.add_argument('--run-mode', choices=['qsub', 'local'], default='qsub')
     eg.add_argument('--start-from', type=int, choices=[3, 4, 5], default=3)
     eg.add_argument('--dry-run', action='store_true')
     eg.add_argument('--threads', type=int, default=4)
 
     args = parser.parse_args()
+    if args.outdir and args.analysis_dir:
+        parser.error('--outdir and --analysis-dir cannot be used together')
+    args.analysis_dir = args.analysis_dir or args.outdir or str(DEFAULT_ANALYSIS_DIR)
+    args.eval_dir = args.eval_dir or str(DEFAULT_EVAL_DIR)
+    args.outdir = args.analysis_dir
+    args.run_mode = 'local'
     if args.families.lower() == 'all':
         args.family_list = ALL_FAMILIES
     else:
@@ -256,14 +275,14 @@ def step3_kinship_analysis(args):
     print("\n" + "=" * 70)
     print("STEP 3: Kinship Analysis")
     print("=" * 70)
-    outdir = Path(args.outdir)
-    vcf_dir, plink_dir = outdir / "vcf_subsets", outdir / "plink_files"
-    results_dir, scripts_dir, logs_dir = outdir / "results", outdir / "scripts", outdir / "logs"
+    analysis_dir = Path(args.analysis_dir)
+    vcf_dir, plink_dir = analysis_dir / "vcf_subsets", analysis_dir / "plink_files"
+    results_dir, scripts_dir, logs_dir = analysis_dir / "results", analysis_dir / "scripts", analysis_dir / "logs"
     for d in [vcf_dir, plink_dir, results_dir, scripts_dir, logs_dir]:
         d.mkdir(parents=True, exist_ok=True)
     joint_vcf = Path(args.joint_vcf)
     samples = get_sample_list(args.family_list)
-    sample_file = outdir / "selected_samples.txt"
+    sample_file = analysis_dir / "selected_samples.txt"
     with open(sample_file, 'w') as f:
         for s in samples:
             f.write(s + '\n')
@@ -274,12 +293,7 @@ def step3_kinship_analysis(args):
         plink_prefix = plink_dir / name
         results_prefix = results_dir / name
         script_content = f"""#!/bin/bash
-#$ -N kin_{name}
-#$ -o {logs_dir}/kin_{name}.out
-#$ -e {logs_dir}/kin_{name}.err
-#$ -cwd
-#$ -V
-#$ -pe smp {args.threads}
+set -euo pipefail
 
 echo "========================================"
 echo "Kinship Analysis: {name}"
@@ -339,19 +353,14 @@ echo "End: $(date)"
             f.write(script_content)
         os.chmod(script_path, 0o755)
         job_names.append(f"kin_{name}")
-        if args.run_mode == 'qsub':
-            if not args.dry_run:
-                result = subprocess.run(f"qsub {script_path}", shell=True, capture_output=True, text=True)
-                print(f"  Submitted: {name} -> {result.stdout.strip()}")
-            else:
-                print(f"  [DRY-RUN] qsub {script_path}")
-        else:
-            print(f"  Running {name} locally...")
-            if not args.dry_run:
-                ret = os.system(f"bash {script_path}")
-                if ret != 0:
-                    print(f"  !! ERROR running {name}")
-                    return None
+        print(f"  Running {name} locally...")
+        if args.dry_run:
+            print(f"  [DRY-RUN] bash {script_path}")
+            continue
+        ret = subprocess.run(["bash", str(script_path)])
+        if ret.returncode != 0:
+            print(f"  !! ERROR running {name}")
+            return None
     return job_names
 
 
@@ -499,9 +508,9 @@ def step4_ground_truth(args):
                         'Relationship': 'Unrelated', 'Degree': 0,
                         'Expected_Kinship': 0.0, 'Same_Family': False, 'Is_Related': False})
     gt_df = pd.DataFrame(results)
-    outdir = Path(args.outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
-    gt_path = outdir / "family_relationships.csv"
+    analysis_dir = Path(args.analysis_dir)
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+    gt_path = analysis_dir / "family_relationships.csv"
     gt_df.to_csv(gt_path, index=False)
     n_related = len(gt_df[gt_df['Is_Related']])
     print(f"\n  Total pairs: {len(gt_df):,}")
@@ -1058,16 +1067,17 @@ def step5_evaluate(args, gt_df=None):
     print("\n" + "=" * 70)
     print("STEP 5: Evaluation")
     print("=" * 70)
-    outdir = Path(args.outdir)
-    results_dir = outdir / "results"
-    fig_dir = outdir / "figures"
-    reports_dir = outdir / "reports"
+    analysis_dir = Path(args.analysis_dir)
+    eval_dir = Path(args.eval_dir)
+    results_dir = analysis_dir / "results"
+    fig_dir = eval_dir / "figures"
+    reports_dir = eval_dir / "reports"
     DD = fig_dir/"distributions"; DH = fig_dir/"heatmaps"; DR = fig_dir/"roc_curves"
     DS = fig_dir/"scatter"; DC = fig_dir/"comparison"; DM = fig_dir/"summary"
     for d in [DD, DH, DR, DS, DC, DM, reports_dir]:
         d.mkdir(parents=True, exist_ok=True)
     if gt_df is None:
-        gt_path = outdir / "family_relationships.csv"
+        gt_path = analysis_dir / "family_relationships.csv"
         if not gt_path.exists():
             print(f"  ERROR: {gt_path} not found. Run step 4 first."); return
         gt_df = pd.read_csv(gt_path)
@@ -1093,12 +1103,12 @@ def step5_evaluate(args, gt_df=None):
         print(f"  {ms}: {merged['IBS'].notna().sum():,} pairs with data")
         all_res.append(merged)
     all_df = pd.concat(all_res, ignore_index=True)
-    all_df.to_csv(outdir / "all_results_combined.csv", index=False)
+    all_df.to_csv(eval_dir / "all_results_combined.csv", index=False)
 
     # ROC
     print("\n[3] Calculating ROC metrics...")
     roc_results = calculate_all_roc_scenarios(all_df, marker_list)
-    roc_results.to_csv(outdir / "roc_results.csv", index=False)
+    roc_results.to_csv(eval_dir / "roc_results.csv", index=False)
 
     print("\n" + "=" * 70)
     print("GENERATING FIGURES")
@@ -1220,55 +1230,7 @@ def step5_evaluate(args, gt_df=None):
             r = md[md['Metric']==m]['AUC'].values
             vals[m] = f"{r[0]:.4f}" if len(r)>0 and pd.notna(r[0]) else "N/A"
         print(f"{mk:<15} {vals['IBS']:>10} {vals['IBD']:>10} {vals['Kinship']:>10}")
-    print(f"\nAll outputs in: {outdir}")
-
-
-# ============================================================
-# qsub chain helper
-# ============================================================
-def create_eval_script(args):
-    outdir = Path(args.outdir)
-    scripts_dir = outdir / "scripts"; logs_dir = outdir / "logs"
-    scripts_dir.mkdir(parents=True, exist_ok=True); logs_dir.mkdir(parents=True, exist_ok=True)
-    this_script = os.path.abspath(__file__)
-    families_str = ','.join(str(f) for f in args.family_list)
-    marker_args = []
-    if args.config_file:
-        marker_args.append(f"--config {args.config_file}")
-    else:
-        mm = {'--36k': args.bed_36k, '--24k': args.bed_24k, '--20k': args.bed_20k,
-              '--12k': args.bed_12k, '--6k': args.bed_6k,
-              '--kintelligence': args.bed_kintelligence, '--qiaseq': args.bed_qiaseq}
-        for flag, val in mm.items():
-            if val: marker_args.append(f"{flag} {val}")
-    marker_args_str = " \\\n    ".join(marker_args) if marker_args else ""
-    script_content = f"""#!/bin/bash
-#$ -N eval_kinship
-#$ -o {logs_dir}/eval_kinship.out
-#$ -e {logs_dir}/eval_kinship.err
-#$ -cwd
-#$ -V
-#$ -pe smp 2
-
-echo "Steps 4+5: Ground Truth + Evaluation"
-echo "Start: $(date)"
-
-python3 {this_script} \\
-    --families {families_str} \\
-    {marker_args_str} \\
-    --joint-vcf {args.joint_vcf} \\
-    --ped {args.ped} \\
-    --outdir {args.outdir} \\
-    --start-from 4 \\
-    --run-mode local
-
-echo "End: $(date)"
-"""
-    script_path = scripts_dir / "eval_kinship.sh"
-    with open(script_path, 'w') as f:
-        f.write(script_content)
-    os.chmod(script_path, 0o755)
-    return script_path
+    print(f"\nStep 5 outputs in: {eval_dir}")
 
 
 # ============================================================
@@ -1277,31 +1239,22 @@ echo "End: $(date)"
 def main():
     args = parse_args()
     print("=" * 70)
-    print("KINSHIP ANALYSIS UNIFIED PIPELINE (v2)")
+    print("KINSHIP ANALYSIS UNIFIED PIPELINE (v3)")
     print("=" * 70)
     print(f"  Families: {args.family_list}")
     print(f"  Marker sets: {args.marker_list}")
     print(f"  Joint VCF: {args.joint_vcf}")
     print(f"  PED file: {args.ped}")
-    print(f"  Output: {args.outdir}")
-    print(f"  Run mode: {args.run_mode}")
+    print(f"  Step 3/4 output: {args.analysis_dir}")
+    print(f"  Step 5 output: {args.eval_dir}")
+    print("  Run mode: local")
     print(f"  Start from: Step {args.start_from}")
     if args.dry_run: print(f"  *** DRY RUN ***")
 
     if args.start_from <= 3:
-        kin_job_names = step3_kinship_analysis(args)
-        if args.run_mode == 'qsub' and not args.dry_run and kin_job_names:
-            eval_script = create_eval_script(args)
-            hold_jid = ','.join(kin_job_names)
-            result = subprocess.run(f"qsub -hold_jid {hold_jid} {eval_script}", shell=True, capture_output=True, text=True)
-            print(f"\n  Submitted eval job (depends on {hold_jid}): {result.stdout.strip()}")
-            print(f"  Monitor: qstat")
-            print(f"  Logs: {Path(args.outdir)/'logs'}")
-            return
-        elif args.run_mode == 'qsub' and args.dry_run:
-            eval_script = create_eval_script(args)
-            hold_jid = ','.join(kin_job_names) if kin_job_names else 'kin_*'
-            print(f"\n  [DRY-RUN] qsub -hold_jid {hold_jid} {eval_script}")
+        if step3_kinship_analysis(args) is None:
+            sys.exit(1)
+        if args.dry_run:
             return
 
     gt_df = None
