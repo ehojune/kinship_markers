@@ -15,9 +15,9 @@ import textwrap
 from pathlib import Path
 
 HOME = Path.home()
-DEFAULT_WORK_DIR  = HOME / "kinship/Analysis/20251031_wgrs"
-DEFAULT_JOINT_VCF = DEFAULT_WORK_DIR / "05_jointcall/joint_called.allsites.vcf.gz"
-DEFAULT_ANALYSIS_DIR = DEFAULT_WORK_DIR / "06_kinship_analysis"
+DEFAULT_WORK_DIR  = "/mnt/d/Research/20251031_wgrs"
+DEFAULT_JOINT_VCF = "/mnt/d/Research/20251031_wgrs/05_jointcall/joint_called.allsites.vcf.gz"
+DEFAULT_ANALYSIS_DIR = "/mnt/d/Research/20251031_wgrs06_kinship_analysis"
 
 ALL_FAMILIES = [1, 2, 4, 5, 6, 9, 10, 14, 15, 18]
 MEMBERS = ['1A', '2B', '3a', '4b', '5c', '6D', '7E', '8d', '9e', '10f']
@@ -97,7 +97,6 @@ def parse_args():
     mg = parser.add_argument_group('Marker sets (CLI mode)')
     mg.add_argument('--36k', dest='bed_36k', help='BED for NFS_36K')
     mg.add_argument('--24k', dest='bed_24k', help='BED for NFS_24K')
-    mg.add_argument('--20k', dest='bed_20k', help='BED for NFS_20K')
     mg.add_argument('--12k', dest='bed_12k', help='BED for NFS_12K')
     mg.add_argument('--6k',  dest='bed_6k',  help='BED for NFS_6K')
     mg.add_argument('--kintelligence', dest='bed_kintelligence', help='BED for Kintelligence')
@@ -118,7 +117,7 @@ def parse_args():
     if args.config_file:
         args.marker_sets = load_config(args.config_file)
     else:
-        cli = {'NFS_36K': args.bed_36k, 'NFS_24K': args.bed_24k, 'NFS_20K': args.bed_20k,
+        cli = {'NFS_36K': args.bed_36k, 'NFS_24K': args.bed_24k,
                'NFS_12K': args.bed_12k, 'NFS_6K': args.bed_6k,
                'Kintelligence': args.bed_kintelligence, 'QIAseq': args.bed_qiaseq}
         for name, path in cli.items():
