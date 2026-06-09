@@ -801,7 +801,7 @@ def parse_args():
         description='Step 5: evaluate existing Step 3/4 kinship outputs without rerunning PLINK/KING')
     parser.add_argument('--analysis-dir', '--outdir', dest='analysis_dir', default=str(DEFAULT_ANALYSIS_DIR),
                         help='Directory containing Step 3/4 outputs (default: 06_kinship_analysis)')
-    parser.add_argument('--eval-dir', default=f"{DEFAULT_ANALYSIS_DIR}/07_evaluate_kinship",
+    parser.add_argument('--eval-dir', default=f"{DEFAULT_WORK_DIR}/07_evaluate_kinship",
                         help='Directory for Step 5 outputs (default: 07_evaluate_kinship)')
     parser.add_argument('--markers', nargs='+', default=None,
                         help='Optional marker set order/list. If omitted, markers are inferred from *_plink.genome files.')

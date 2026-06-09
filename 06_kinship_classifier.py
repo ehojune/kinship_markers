@@ -31,9 +31,10 @@ plt.rcParams.update({'axes.unicode_minus':False,'figure.dpi':150,
 
 METRICS = ['IBS','IBD','Kinship']
 
+DEFAULT_WORK_DIR = Path('/mnt/d/Research/20251031_wgrs')
 DEFAULT_ANALYSIS_DIR = Path('/mnt/d/Research/20251031_wgrs/06_kinship_analysis')
 DEFAULT_EVAL_SUBDIR = '07_evaluate_kinship'
-DEFAULT_CLASSIFIER_SUBDIR = '06_kinship_classifier'
+DEFAULT_CLASSIFIER_SUBDIR = '07_evaluate_kinship/classifier'
 COMBINED_CSV_NAME = 'all_results_combined.csv'
 COMPARISON_MARKERS = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K', 'Kintelligence', 'QIAseq']
 
@@ -938,6 +939,8 @@ def resolve_combined_csv(args):
             eval_dir / COMBINED_CSV_NAME,
             analysis_dir / DEFAULT_EVAL_SUBDIR / COMBINED_CSV_NAME,
             analysis_dir / COMBINED_CSV_NAME,
+            DEFAULT_WORK_DIR / DEFAULT_EVAL_SUBDIR / COMBINED_CSV_NAME,
+            DEFAULT_WORK_DIR / COMBINED_CSV_NAME,
         ]
 
     for candidate in candidates:
