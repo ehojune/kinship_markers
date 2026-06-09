@@ -10,7 +10,7 @@ Per-metric classifier with ROC-based thresholds (Youden's J):
   - Grand-Uncle-Nephew = 4th degree
 
 Usage:
-  python 06_kinship_classifier.py --eval-dir /path/to/06_kinship_analysis/07_evaluate_kinship
+  python 06_kinship_classifier.py --eval-dir /path/to/07_evaluate_kinship
   python 06_kinship_classifier.py --combined-csv all_results_combined.csv
 """
 
@@ -32,9 +32,10 @@ plt.rcParams.update({'axes.unicode_minus':False,'figure.dpi':150,
 METRICS = ['IBS','IBD','Kinship']
 
 DEFAULT_WORK_DIR = Path('/mnt/d/Research/20251031_wgrs')
-DEFAULT_ANALYSIS_DIR = Path('/mnt/d/Research/20251031_wgrs/06_kinship_analysis')
+DEFAULT_ANALYSIS_DIR = DEFAULT_WORK_DIR / '06_kinship_analysis'
 DEFAULT_EVAL_SUBDIR = '07_evaluate_kinship'
-DEFAULT_CLASSIFIER_SUBDIR = '07_evaluate_kinship/classifier'
+DEFAULT_EVAL_DIR = DEFAULT_WORK_DIR / DEFAULT_EVAL_SUBDIR
+DEFAULT_CLASSIFIER_SUBDIR = 'classifier'
 COMBINED_CSV_NAME = 'all_results_combined.csv'
 COMPARISON_MARKERS = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K', 'Kintelligence', 'QIAseq']
 
@@ -928,18 +929,26 @@ def generate_report(rdf, all_gadf, all_radf, all_mcdf, cinfo, mlist, rpath):
 # Main
 # ============================================================
 
+def default_eval_dir_for_analysis(analysis_dir):
+    """Return the sibling Step 5 directory for a Step 3/4 analysis directory."""
+    analysis_path = Path(analysis_dir)
+    if analysis_path.name.startswith("06_"):
+        return analysis_path.parent / DEFAULT_EVAL_SUBDIR
+    return DEFAULT_EVAL_DIR
+
+
 def resolve_combined_csv(args):
     """Resolve Step 5's combined result table from explicit or pipeline paths."""
     if args.combined_csv:
         candidates = [Path(args.combined_csv)]
     else:
         analysis_dir = Path(args.analysis_dir) if args.analysis_dir else DEFAULT_ANALYSIS_DIR
-        eval_dir = Path(args.eval_dir) if args.eval_dir else analysis_dir / DEFAULT_EVAL_SUBDIR
+        eval_dir = Path(args.eval_dir) if args.eval_dir else default_eval_dir_for_analysis(analysis_dir)
         candidates = [
             eval_dir / COMBINED_CSV_NAME,
+            DEFAULT_EVAL_DIR / COMBINED_CSV_NAME,
             analysis_dir / DEFAULT_EVAL_SUBDIR / COMBINED_CSV_NAME,
             analysis_dir / COMBINED_CSV_NAME,
-            DEFAULT_WORK_DIR / DEFAULT_EVAL_SUBDIR / COMBINED_CSV_NAME,
             DEFAULT_WORK_DIR / COMBINED_CSV_NAME,
         ]
 
@@ -964,13 +973,13 @@ def parse_args():
         description='Step 6: classify Step 5 kinship evaluation results with per-metric ROC thresholds')
     parser.add_argument('--analysis-dir', '--results-dir', dest='analysis_dir', type=str,
                         default=str(DEFAULT_ANALYSIS_DIR),
-                        help='Pipeline analysis directory containing 07_evaluate_kinship (default: %(default)s)')
+                        help='Step 3/4 analysis directory; Step 5 defaults to sibling 07_evaluate_kinship (default: %(default)s)')
     parser.add_argument('--eval-dir', type=str, default=None,
                         help='Step 5 evaluation output directory containing all_results_combined.csv')
     parser.add_argument('--combined-csv', type=str,
                         help='Explicit Step 5 all_results_combined.csv path')
     parser.add_argument('--output-dir', type=str, default=None,
-                        help='Classifier output directory (default: <eval-dir>/06_kinship_classifier)')
+                        help='Classifier output directory (default: <eval-dir>/classifier)')
     return parser.parse_args()
 
 

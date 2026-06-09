@@ -4,7 +4,7 @@ Step 5: Evaluate kinship results
 ================================
 Load existing Step 3 PLINK/KING outputs plus Step 4 ground truth, then generate
 combined result tables, ROC metrics, figures, and reports. Outputs are written
-under 07_evalutate_kinship by default. This step does not rerun PLINK or KING.
+under 07_evaluate_kinship by default. This step does not rerun PLINK or KING.
 """
 
 import argparse
@@ -22,9 +22,10 @@ import warnings
 warnings.filterwarnings('ignore')
 
 HOME = Path.home()
-DEFAULT_WORK_DIR  = "/mnt/d/Research/20251031_wgrs"
-DEFAULT_JOINT_VCF = "/mnt/d/Research/20251031_wgrs/05_jointcall/joint_called.allsites.vcf.gz"
-DEFAULT_ANALYSIS_DIR = "/mnt/d/Research/20251031_wgrs/06_kinship_analysis"
+DEFAULT_WORK_DIR = Path("/mnt/d/Research/20251031_wgrs")
+DEFAULT_JOINT_VCF = DEFAULT_WORK_DIR / "05_jointcall" / "joint_called.allsites.vcf.gz"
+DEFAULT_ANALYSIS_DIR = DEFAULT_WORK_DIR / "06_kinship_analysis"
+DEFAULT_EVAL_DIR = DEFAULT_WORK_DIR / "07_evaluate_kinship"
 
 # ============================================================
 # Plotting Constants
@@ -796,17 +797,32 @@ def step5_evaluate(args, gt_df=None):
     print(f"\nStep 5 outputs in: {eval_dir}")
 
 
+def resolve_eval_dir(eval_dir, analysis_dir):
+    """Return the Step 5 output directory.
+
+    By default, numbered pipeline directories are siblings under the work dir:
+    06_kinship_analysis and 07_evaluate_kinship.
+    """
+    if eval_dir:
+        return Path(eval_dir)
+    analysis_path = Path(analysis_dir)
+    if analysis_path.name.startswith("06_"):
+        return analysis_path.parent / DEFAULT_EVAL_DIR.name
+    return DEFAULT_EVAL_DIR
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Step 5: evaluate existing Step 3/4 kinship outputs without rerunning PLINK/KING')
     parser.add_argument('--analysis-dir', '--outdir', dest='analysis_dir', default=str(DEFAULT_ANALYSIS_DIR),
                         help='Directory containing Step 3/4 outputs (default: 06_kinship_analysis)')
-    parser.add_argument('--eval-dir', default=f"{DEFAULT_WORK_DIR}/07_evaluate_kinship",
-                        help='Directory for Step 5 outputs (default: 07_evaluate_kinship)')
+    parser.add_argument('--eval-dir', default=None,
+                        help=f'Directory for Step 5 outputs (default: sibling {DEFAULT_EVAL_DIR.name} under the work dir)')
     parser.add_argument('--markers', nargs='+', default=None,
                         help='Optional marker set order/list. If omitted, markers are inferred from *_plink.genome files.')
     args = parser.parse_args()
     args.marker_list = args.markers or []
+    args.eval_dir = str(resolve_eval_dir(args.eval_dir, args.analysis_dir))
     return args
 
 

@@ -14,9 +14,9 @@ from itertools import combinations
 import pandas as pd
 
 HOME = Path.home()
-DDEFAULT_WORK_DIR  = "/mnt/d/Research/20251031_wgrs"
-DEFAULT_JOINT_VCF = "/mnt/d/Research/20251031_wgrs/05_jointcall/joint_called.allsites.vcf.gz"
-DEFAULT_ANALYSIS_DIR = "/mnt/d/Research/20251031_wgrs/06_kinship_analysis"
+DEFAULT_WORK_DIR = Path("/mnt/d/Research/20251031_wgrs")
+DEFAULT_JOINT_VCF = DEFAULT_WORK_DIR / "05_jointcall" / "joint_called.allsites.vcf.gz"
+DEFAULT_ANALYSIS_DIR = DEFAULT_WORK_DIR / "06_kinship_analysis"
 
 ALL_FAMILIES = [1, 2, 4, 5, 6, 9, 10, 14, 15, 18]
 
