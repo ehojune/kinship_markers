@@ -26,7 +26,7 @@ class FamilyTree:
     GP/GM virtual samples excluded."""
     def __init__(self, family_id):
         self.family_id = family_id
-        self.members = {}
+        self.members = {}  
         self.children = defaultdict(list)
 
     def add_member(self, member_id, father_id, mother_id, sex):
