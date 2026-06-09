@@ -14,9 +14,9 @@ from itertools import combinations
 import pandas as pd
 
 HOME = Path.home()
-DEFAULT_WORK_DIR = HOME / "kinship/Analysis/20251031_wgrs"
-DEFAULT_PED_FILE = DEFAULT_WORK_DIR / "full_pedigree.ped"
-DEFAULT_ANALYSIS_DIR = DEFAULT_WORK_DIR / "06_kinship_analysis"
+DDEFAULT_WORK_DIR  = "/mnt/d/Research/20251031_wgrs"
+DEFAULT_JOINT_VCF = "/mnt/d/Research/20251031_wgrs/05_jointcall/joint_called.allsites.vcf.gz"
+DEFAULT_ANALYSIS_DIR = "/mnt/d/Research/20251031_wgrs/06_kinship_analysis"
 
 ALL_FAMILIES = [1, 2, 4, 5, 6, 9, 10, 14, 15, 18]
 
@@ -182,7 +182,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Step 4: generate pedigree ground truth')
     parser.add_argument('--families', required=True,
                         help='"all" or comma-separated (e.g. "1,2,5,6")')
-    parser.add_argument('--ped', default=str(DEFAULT_PED_FILE))
+    parser.add_argument('--ped', default=f"{DEFAULT_ANALYSIS_DIR}/full_pedigree.ped",)
     parser.add_argument('--analysis-dir', '--outdir', dest='analysis_dir', default=str(DEFAULT_ANALYSIS_DIR),
                         help='Directory for Step 4 output (default: 06_kinship_analysis)')
     args = parser.parse_args()

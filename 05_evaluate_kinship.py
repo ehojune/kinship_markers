@@ -22,9 +22,9 @@ import warnings
 warnings.filterwarnings('ignore')
 
 HOME = Path.home()
-DEFAULT_WORK_DIR = HOME / "kinship/Analysis/20251031_wgrs"
-DEFAULT_ANALYSIS_DIR = DEFAULT_WORK_DIR / "06_kinship_analysis"
-DEFAULT_EVAL_DIR = DEFAULT_WORK_DIR / "07_evalutate_kinship"
+DEFAULT_WORK_DIR  = "/mnt/d/Research/20251031_wgrs"
+DEFAULT_JOINT_VCF = "/mnt/d/Research/20251031_wgrs/05_jointcall/joint_called.allsites.vcf.gz"
+DEFAULT_ANALYSIS_DIR = "/mnt/d/Research/20251031_wgrs/06_kinship_analysis"
 
 # ============================================================
 # Plotting Constants
@@ -35,7 +35,7 @@ plt.rcParams['savefig.dpi'] = 150
 plt.rcParams['figure.facecolor'] = 'white'
 
 MARKER_COLORS = {
-    'NFS_36K': '#1a5276', 'NFS_24K': '#2874a6', 'NFS_20K': '#3498db',
+    'NFS_36K': '#1a5276', 'NFS_24K': '#2874a6',
     'NFS_12K': '#e74c3c', 'NFS_6K': '#9b59b6',
     'Kintelligence': '#27ae60', 'QIAseq': '#f39c12'
 }
@@ -92,7 +92,7 @@ def _md(metric):
 def load_plink_genome(filepath):
     if not filepath.exists():
         return None
-    df = pd.read_csv(filepath, delim_whitespace=True)
+    df = pd.read_csv(filepath, sep=r'\s+')
     df['Sample1'] = df['IID1'].astype(str)
     df['Sample2'] = df['IID2'].astype(str)
     df['pair'] = df.apply(lambda r: tuple(sorted([r['Sample1'], r['Sample2']])), axis=1)
@@ -322,6 +322,9 @@ def plot_heatmap_within_family(all_df, marker_set, metric, family, output_path):
 # ROC calculation (all 13 scenarios)
 # ============================================================
 def calculate_roc_metrics(y_true, y_score):
+    y_score = pd.to_numeric(y_score, errors='coerce')
+    y_score = np.asarray(y_score, dtype=float)
+    valid = ~np.isnan(y_score)
     valid = ~np.isnan(y_score)
     y_true, y_score = np.array(y_true)[valid], np.array(y_score)[valid]
     if len(np.unique(y_true)) < 2 or len(y_true) == 0:
@@ -798,8 +801,8 @@ def parse_args():
         description='Step 5: evaluate existing Step 3/4 kinship outputs without rerunning PLINK/KING')
     parser.add_argument('--analysis-dir', '--outdir', dest='analysis_dir', default=str(DEFAULT_ANALYSIS_DIR),
                         help='Directory containing Step 3/4 outputs (default: 06_kinship_analysis)')
-    parser.add_argument('--eval-dir', default=str(DEFAULT_EVAL_DIR),
-                        help='Directory for Step 5 outputs (default: 07_evalutate_kinship)')
+    parser.add_argument('--eval-dir', default=f"{DEFAULT_ANALYSIS_DIR}/07_evaluate_kinship",
+                        help='Directory for Step 5 outputs (default: 07_evaluate_kinship)')
     parser.add_argument('--markers', nargs='+', default=None,
                         help='Optional marker set order/list. If omitted, markers are inferred from *_plink.genome files.')
     args = parser.parse_args()
