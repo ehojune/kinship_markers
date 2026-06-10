@@ -15,6 +15,8 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 import seaborn as sns
 from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix
 from scipy import stats
@@ -34,6 +36,16 @@ plt.rcParams['axes.unicode_minus'] = False
 plt.rcParams['figure.dpi'] = 150
 plt.rcParams['savefig.dpi'] = 150
 plt.rcParams['figure.facecolor'] = 'white'
+plt.rcParams['font.family'] = 'DejaVu Sans'
+
+# Final manuscript figures must not render chart titles.
+def _disable_plot_titles():
+    def _noop_title(self, *args, **kwargs):
+        return None
+    Axes.set_title = _noop_title
+    Figure.suptitle = _noop_title
+
+_disable_plot_titles()
 
 MARKER_COLORS = {
     'NFS_36K': '#1a5276', 'NFS_24K': '#2874a6',
@@ -44,38 +56,91 @@ DEGREE_COLORS = {
     0: '#95a5a6', 1: '#c0392b', 2: '#e74c3c', 3: '#e67e22',
     4: '#f1c40f', 5: '#2ecc71', 6: '#3498db', 7: '#9b59b6'
 }
-RELATIONSHIP_COLORS = {
-    'Parent-Child': '#c0392b', 'Sibling': '#e74c3c',
-    'Grandparent-Grandchild': '#d35400', 'Uncle-Nephew': '#e67e22',
-    'Cousin': '#f39c12', 'Grand-Uncle-Nephew': '#27ae60',
-    'Cousin-Once-Removed': '#2ecc71', 'Second-Cousin': '#3498db',
-    'Spouse': '#7f8c8d', 'Unrelated': '#95a5a6',
-}
-RELATIONSHIP_ORDER = [
-    'Parent-Child', 'Sibling', 'Grandparent-Grandchild', 'Uncle-Nephew',
-    'Cousin', 'Grand-Uncle-Nephew', 'Cousin-Once-Removed', 'Second-Cousin',
-    'Spouse', 'Unrelated'
+EMPIRICAL_RELATIONSHIP_ORDER = [
+    'G1_1st', 'G2a_Sib', 'G3_3rd', 'G2b_GPGC',
+    'G4_4th', 'G5_5th', 'G6_6th', 'G0_Unrelated',
 ]
-RELATIONSHIP_LABELS = {
-    'Parent-Child': 'Parent-Child\n(1)',
-    'Sibling': 'Sibling\n(2)',
-    'Grandparent-Grandchild': 'Grandparent\n(2)',
-    'Uncle-Nephew': 'Uncle-Nephew\n(3)',
-    'Cousin': 'Cousin\n(4)',
-    'Grand-Uncle-Nephew': 'Grand-Uncle\n(4)',
-    'Cousin-Once-Removed': 'Cousin-1R\n(5)',
-    'Second-Cousin': '2nd-Cousin\n(6)',
-    'Spouse': 'Spouse\n(0)',
-    'Unrelated': 'Unrelated\n(0)'
+EMPIRICAL_RELATIONSHIP_LABELS = {
+    'G1_1st': '1st',
+    'G2a_Sib': '2nd(sibling)',
+    'G3_3rd': '3rd',
+    'G2b_GPGC': '2nd(GP-GC)',
+    'G4_4th': '4th',
+    'G5_5th': '5th',
+    'G6_6th': '6th',
+    'G0_Unrelated': 'unrelated',
+}
+EMPIRICAL_RELATIONSHIP_COLORS = {
+    'G1_1st': '#c0392b', 'G2a_Sib': '#e74c3c',
+    'G3_3rd': '#e67e22', 'G2b_GPGC': '#d35400',
+    'G4_4th': '#f39c12', 'G5_5th': '#2ecc71',
+    'G6_6th': '#3498db', 'G0_Unrelated': '#95a5a6',
+}
+RELATIONSHIP_TO_EMPIRICAL_GROUP = {
+    'Parent-Child': 'G1_1st',
+    'Sibling': 'G2a_Sib', 'Half-Sibling': 'G2a_Sib',
+    'Uncle-Nephew': 'G3_3rd', 'Great-Grandparent': 'G3_3rd',
+    'Grandparent-Grandchild': 'G2b_GPGC',
+    'Cousin': 'G4_4th', 'Grand-Uncle-Nephew': 'G4_4th',
+    'Cousin-Once-Removed': 'G5_5th',
+    'Second-Cousin': 'G6_6th',
+    'Unrelated': 'G0_Unrelated', 'Spouse': 'G0_Unrelated',
+    'In-Law': 'G0_Unrelated', 'InLaw': 'G0_Unrelated', 'Inlaw': 'G0_Unrelated',
+    'Spouse/InLaw': 'G0_Unrelated', 'Between-Fam': 'G0_Unrelated',
 }
 
 COMPARISON_MARKERS = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K', 'Kintelligence', 'QIAseq']
 DISPLAY_METRIC = {'IBS': 'IBS', 'IBD': 'IBD', 'Kinship': 'KCs'}
+MARKER_DISPLAY = {
+    'NFS_36K': 'NFSKIN_36K',
+    'NFS_24K': 'NFSKIN_24K',
+    'NFS_12K': 'NFSKIN_12K',
+    'NFS_6K': 'NFSKIN_6K',
+}
+
+
+def marker_display(marker):
+    return MARKER_DISPLAY.get(marker, marker)
 
 
 def collapse_spouse_to_others(df):
     df = df.copy()
-    df['Relationship'] = df['Relationship'].replace({'Spouse': 'Unrelated'})
+    df['Relationship'] = df['Relationship'].replace({
+        'Spouse': 'Unrelated',
+        'In-Law': 'Unrelated',
+        'InLaw': 'Unrelated',
+        'Inlaw': 'Unrelated',
+        'Spouse/InLaw': 'Unrelated',
+        'Between-Fam': 'Unrelated',
+    })
+    df.loc[df['Relationship'].str.contains('inlaw|in-law|spouse|between', case=False, na=False), 'Relationship'] = 'Unrelated'
+    return df
+
+
+def empirical_relationship_group(row):
+    if not bool(row.get('Is_Related', False)) or row.get('Degree', 0) == 0:
+        return 'G0_Unrelated'
+    rel = row.get('Relationship')
+    if rel in RELATIONSHIP_TO_EMPIRICAL_GROUP:
+        return RELATIONSHIP_TO_EMPIRICAL_GROUP[rel]
+    degree = row.get('Degree')
+    if degree == 1:
+        return 'G1_1st'
+    if degree == 3:
+        return 'G3_3rd'
+    if degree == 4:
+        return 'G4_4th'
+    if degree == 5:
+        return 'G5_5th'
+    if degree == 6:
+        return 'G6_6th'
+    return 'G0_Unrelated'
+
+
+def add_empirical_relationship(df):
+    df = collapse_spouse_to_others(df)
+    df['Empirical_Relationship'] = df.apply(empirical_relationship_group, axis=1)
+    df['Empirical_Relationship_Label'] = df['Empirical_Relationship'].map(EMPIRICAL_RELATIONSHIP_LABELS)
     return df
 
 
@@ -145,9 +210,9 @@ def plot_boxplot_by_degree_all(all_df, marker_set, output_path):
     df = all_df[all_df['Marker_Set'] == marker_set].copy()
     if len(df) == 0: return
     def get_label(row):
-        return 'Unrelated\n(0)' if row['Degree'] == 0 else f"{row['Degree']}"
+        return 'unrelated' if row['Degree'] == 0 else f"{row['Degree']}"
     df['DL'] = df.apply(get_label, axis=1)
-    order = ['1','2','3','4','5','6','Unrelated\n(0)']
+    order = ['1','2','3','4','5','6','unrelated']
     avail = [o for o in order if o in df['DL'].values]
     pal = []
     for o in avail:
@@ -171,7 +236,7 @@ def plot_boxplot_by_degree_all(all_df, marker_set, output_path):
         ax.set_xlabel('Degree', fontsize=12); ax.set_ylabel(_md(m), fontsize=12)
         ax.set_title(f'{_md(m)}', fontsize=14, fontweight='bold')
         ax.tick_params(axis='x', rotation=45); ax.grid(axis='y', alpha=0.3)
-    plt.suptitle(f'{marker_set} - Distribution by Degree', fontsize=16, fontweight='bold', y=1.02)
+    plt.suptitle(f'{marker_display(marker_set)} - Distribution by Degree', fontsize=16, fontweight='bold', y=1.02)
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
     print(f"    Saved: {output_path.name}")
 
@@ -179,11 +244,12 @@ def plot_boxplot_by_relationship(all_df, marker_set, output_path):
     df = all_df[all_df['Marker_Set'] == marker_set].copy()
     df = collapse_spouse_to_others(df)
     if len(df) == 0: return
-    rel_order = [r for r in RELATIONSHIP_ORDER if r in df['Relationship'].values]
+    df = add_empirical_relationship(df)
+    rel_order = [g for g in EMPIRICAL_RELATIONSHIP_ORDER if g in df['Empirical_Relationship'].values]
     if not rel_order: return
-    df['RL'] = df['Relationship'].map(lambda x: RELATIONSHIP_LABELS.get(x, x))
-    lo = [RELATIONSHIP_LABELS.get(r, r) for r in rel_order]
-    pal = [RELATIONSHIP_COLORS.get(r, '#95a5a6') for r in rel_order]
+    df['RL'] = df['Empirical_Relationship_Label']
+    lo = [EMPIRICAL_RELATIONSHIP_LABELS[g] for g in rel_order]
+    pal = [EMPIRICAL_RELATIONSHIP_COLORS.get(g, '#95a5a6') for g in rel_order]
     fig, axes = plt.subplots(1, 3, figsize=(22, 8))
     for ax, m in zip(axes, ['IBS', 'IBD', 'Kinship']):
         data = df.dropna(subset=[m])
@@ -194,10 +260,10 @@ def plot_boxplot_by_relationship(all_df, marker_set, output_path):
             n = len(data[data['RL'] == label])
             ymin = data[m].min() - (data[m].max() - data[m].min()) * 0.08
             ax.annotate(f'n={n}', xy=(i, ymin), ha='center', va='top', fontsize=8, color='gray', style='italic')
-        ax.set_xlabel('Relationship', fontsize=12); ax.set_ylabel(_md(m), fontsize=12)
+        ax.set_xlabel('Degree', fontsize=12); ax.set_ylabel(_md(m), fontsize=12)
         ax.set_title(f'{_md(m)}', fontsize=14, fontweight='bold')
         ax.tick_params(axis='x', rotation=45, labelsize=9); ax.grid(axis='y', alpha=0.3)
-    plt.suptitle(f'{marker_set} - Distribution by Relationship', fontsize=16, fontweight='bold', y=1.02)
+    plt.suptitle(f'{marker_display(marker_set)} - Distribution by empirical relationship', fontsize=16, fontweight='bold', y=1.02)
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
     print(f"    Saved: {output_path.name}")
 
@@ -205,20 +271,21 @@ def plot_violin_by_relationship(all_df, marker_set, output_path):
     df = all_df[all_df['Marker_Set'] == marker_set].copy()
     df = collapse_spouse_to_others(df)
     if len(df) == 0: return
-    rel_order = [r for r in RELATIONSHIP_ORDER if r in df['Relationship'].values]
+    df = add_empirical_relationship(df)
+    rel_order = [g for g in EMPIRICAL_RELATIONSHIP_ORDER if g in df['Empirical_Relationship'].values]
     if not rel_order: return
-    df['RL'] = df['Relationship'].map(lambda x: RELATIONSHIP_LABELS.get(x, x))
-    lo = [RELATIONSHIP_LABELS.get(r, r) for r in rel_order]
-    pal = [RELATIONSHIP_COLORS.get(r, '#95a5a6') for r in rel_order]
+    df['RL'] = df['Empirical_Relationship_Label']
+    lo = [EMPIRICAL_RELATIONSHIP_LABELS[g] for g in rel_order]
+    pal = [EMPIRICAL_RELATIONSHIP_COLORS.get(g, '#95a5a6') for g in rel_order]
     fig, axes = plt.subplots(1, 3, figsize=(22, 8))
     for ax, m in zip(axes, ['IBS', 'IBD', 'Kinship']):
         data = df.dropna(subset=[m])
         if len(data) == 0: continue
         sns.violinplot(data=data, x='RL', y=m, order=lo, palette=pal, ax=ax, inner='box', linewidth=1)
-        ax.set_xlabel('Relationship', fontsize=12); ax.set_ylabel(_md(m), fontsize=12)
+        ax.set_xlabel('Degree', fontsize=12); ax.set_ylabel(_md(m), fontsize=12)
         ax.set_title(f'{_md(m)}', fontsize=14, fontweight='bold')
         ax.tick_params(axis='x', rotation=45, labelsize=9); ax.grid(axis='y', alpha=0.3)
-    plt.suptitle(f'{marker_set} - Violin by Relationship', fontsize=16, fontweight='bold', y=1.02)
+    plt.suptitle(f'{marker_display(marker_set)} - Violin by empirical relationship', fontsize=16, fontweight='bold', y=1.02)
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
 
 
@@ -228,12 +295,13 @@ def plot_relationship_distribution_single(all_df, marker_set, metric, output_pat
     df = collapse_spouse_to_others(df)
     if len(df) == 0:
         return
-    rel_order = [r for r in RELATIONSHIP_ORDER if r in df['Relationship'].values]
+    df = add_empirical_relationship(df)
+    rel_order = [g for g in EMPIRICAL_RELATIONSHIP_ORDER if g in df['Empirical_Relationship'].values]
     if not rel_order:
         return
-    df['RL'] = df['Relationship'].map(lambda x: RELATIONSHIP_LABELS.get(x, x))
-    lo = [RELATIONSHIP_LABELS.get(r, r) for r in rel_order]
-    pal = [RELATIONSHIP_COLORS.get(r, '#95a5a6') for r in rel_order]
+    df['RL'] = df['Empirical_Relationship_Label']
+    lo = [EMPIRICAL_RELATIONSHIP_LABELS[g] for g in rel_order]
+    pal = [EMPIRICAL_RELATIONSHIP_COLORS.get(g, '#95a5a6') for g in rel_order]
     data = df.dropna(subset=[metric])
     if len(data) == 0:
         return
@@ -244,9 +312,9 @@ def plot_relationship_distribution_single(all_df, marker_set, metric, output_pat
         sns.stripplot(data=data, x='RL', y=metric, order=lo, color='black', size=2, alpha=0.3, ax=ax, jitter=True)
     else:
         sns.violinplot(data=data, x='RL', y=metric, order=lo, palette=pal, ax=ax, inner='box', linewidth=1)
-    ax.set_xlabel('Relationship', fontsize=12)
+    ax.set_xlabel('Degree', fontsize=12)
     ax.set_ylabel(_md(metric), fontsize=12)
-    ax.set_title(f'{marker_set} - {_md(metric)} ({kind.capitalize()} by Relationship)', fontsize=14, fontweight='bold')
+    ax.set_title(f'{marker_display(marker_set)} - {_md(metric)} ({kind.capitalize()} by empirical relationship)', fontsize=14, fontweight='bold')
     ax.tick_params(axis='x', rotation=30, labelsize=10)
     ax.grid(axis='y', alpha=0.3)
     plt.tight_layout()
@@ -283,7 +351,7 @@ def plot_heatmap_standard(all_df, marker_set, metric, output_path):
     ax.set_xticks(np.arange(n) + 0.5); ax.set_yticks(np.arange(n) + 0.5)
     ax.set_xticklabels(labels, rotation=90, ha='center', fontsize=fs)
     ax.set_yticklabels(labels, rotation=0, ha='right', fontsize=fs)
-    ax.set_title(f'{marker_set} - {_md(metric)}', fontsize=14, fontweight='bold')
+    ax.set_title(f'{marker_display(marker_set)} - {_md(metric)}', fontsize=14, fontweight='bold')
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
     print(f"    Saved: {output_path.name}")
 
@@ -315,7 +383,7 @@ def plot_heatmap_within_family(all_df, marker_set, metric, family, output_path):
     labels = [s.split('-')[-1] for s in samples]
     ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=11)
     ax.set_yticklabels(labels, rotation=0, fontsize=11)
-    ax.set_title(f'Family {family} - {marker_set} - {_md(metric)}', fontsize=13, fontweight='bold')
+    ax.set_title(f'Family {family} - {marker_display(marker_set)} - {_md(metric)}', fontsize=13, fontweight='bold')
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
 
 
@@ -383,7 +451,7 @@ def plot_roc_curves(all_df, scenario_name, pos_filter, neg_filter, title, marker
             yt = pm[combined.index].astype(int)
             auc, fpr, tpr, _ = calculate_roc_metrics(yt, combined[metric].values)
             if auc is not None:
-                ax.plot(fpr, tpr, label=f'{ms} ({auc:.3f})',
+                ax.plot(fpr, tpr, label=f'{marker_display(ms)} ({auc:.3f})',
                         color=MARKER_COLORS.get(ms, 'gray'), linewidth=2)
         ax.plot([0,1],[0,1],'k--',alpha=0.5)
         ax.set_xlabel('FPR', fontsize=12); ax.set_ylabel('TPR', fontsize=12)
@@ -397,9 +465,12 @@ def plot_auc_heatmap(roc_results, metric, marker_list, output_path):
     data = roc_results[roc_results['Metric'] == metric].copy()
     if len(data) == 0: return
     pivot = data.pivot(index='Marker_Set', columns='Scenario', values='AUC')
-    mo = [m for m in marker_list if m in pivot.index]
-    if not mo: return
-    pivot = pivot.reindex(mo).apply(pd.to_numeric, errors='coerce')
+    mo_raw = [m for m in marker_list if m in pivot.index]
+    if not mo_raw: return
+    pivot = pivot.reindex(mo_raw)
+    pivot.index = [marker_display(m) for m in pivot.index]
+    mo = [marker_display(m) for m in mo_raw]
+    pivot = pivot.apply(pd.to_numeric, errors='coerce')
     if pivot.isna().all().all(): return
     fig, ax = plt.subplots(figsize=(18, max(5, len(mo) * 1.15 + 2)))
     sns.heatmap(pivot, annot=True, fmt='.3f', cmap='RdYlGn', vmin=0.5, vmax=1.0,
@@ -421,10 +492,10 @@ def plot_adjacent_discrimination(roc_results, marker_list, output_path):
             for s in adj:
                 row = msd[msd['Scenario']==s]
                 yv.append(row['AUC'].values[0] if len(row)>0 and pd.notna(row['AUC'].values[0]) else np.nan)
-            ax.plot(range(len(adj)), yv, 'o-', color=MARKER_COLORS.get(ms,'gray'), label=ms, linewidth=2, markersize=8)
+            ax.plot(range(len(adj)), yv, 'o-', color=MARKER_COLORS.get(ms,'gray'), label=marker_display(ms), linewidth=2, markersize=8)
         ax.set_xticks(range(len(adj)))
         ax.set_xticklabels(['1v2','2v3','3v4','4v5','5v6'], fontsize=10)
-        ax.set_xlabel('Adjacent ()', fontsize=12); ax.set_ylabel('AUC', fontsize=12)
+        ax.set_xlabel('Adjacent degree', fontsize=12); ax.set_ylabel('AUC', fontsize=12)
         ax.set_title(f'{_md(metric)}', fontsize=14, fontweight='bold')
         ax.legend(loc='best', fontsize=8); ax.grid(alpha=0.3); ax.set_ylim(0.4, 1.05)
         ax.axhline(y=0.5, color='red', linestyle='--', alpha=0.5)
@@ -451,7 +522,7 @@ def plot_scatter_expected_vs_observed(all_df, marker_set, output_path):
         ax.set_xlabel('Expected KCs'); ax.set_ylabel(f'Observed {_md(m)}')
         ax.set_title(f'{_md(m)}', fontsize=14, fontweight='bold')
         ax.legend(loc='lower right', fontsize=8, ncol=2); ax.grid(alpha=0.3)
-    plt.suptitle(f'{marker_set} - Expected vs Observed', fontsize=16, fontweight='bold', y=1.02)
+    plt.suptitle(f'{marker_display(marker_set)} - Expected vs Observed', fontsize=16, fontweight='bold', y=1.02)
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
 
 
@@ -470,10 +541,12 @@ def plot_marker_comparison_overlay(all_df, marker_list, metric, output_path, tit
     sns.boxplot(data=data, x='DL', y=metric, hue='Marker_Set',
                 order=[f"{d}" for d in degrees], hue_order=marker_list, ax=ax,
                 palette={m: MARKER_COLORS.get(m,'gray') for m in marker_list}, width=0.8, linewidth=1)
-    ax.set_xlabel('Degree ()', fontsize=13); ax.set_ylabel(_md(metric), fontsize=13)
+    ax.set_xlabel('Degree', fontsize=13); ax.set_ylabel(_md(metric), fontsize=13)
     suffix = f' ({title_suffix})' if title_suffix else ''
     ax.set_title(f'Marker Comparison - {_md(metric)}{suffix}', fontsize=15, fontweight='bold')
-    ax.legend(title='Marker Set', loc='upper right', fontsize=8); ax.grid(axis='y', alpha=0.3)
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles, [marker_display(label) for label in labels], title='Marker Set', loc='upper right', fontsize=8)
+    ax.grid(axis='y', alpha=0.3)
     plt.tight_layout(); plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
     print(f"    Saved: {output_path.name}")
 
@@ -505,8 +578,8 @@ def generate_degree_summary_stats(all_df, marker_list, output_csv, output_plot):
         s = kin[(kin['Marker_Set']==ms) & (kin['Degree']>0)]
         if len(s)==0: continue
         axes[0].errorbar(s['Degree'], s['Mean'], yerr=s['Std'], fmt='o-',
-                         color=MARKER_COLORS.get(ms,'gray'), label=ms, linewidth=1.5, capsize=3, markersize=6)
-        axes[1].plot(s['Degree'], s['CV'], 'o-', color=MARKER_COLORS.get(ms,'gray'), label=ms, linewidth=1.5, markersize=6)
+                         color=MARKER_COLORS.get(ms,'gray'), label=marker_display(ms), linewidth=1.5, capsize=3, markersize=6)
+        axes[1].plot(s['Degree'], s['CV'], 'o-', color=MARKER_COLORS.get(ms,'gray'), label=marker_display(ms), linewidth=1.5, markersize=6)
     axes[0].set_xlabel('Degree ()'); axes[0].set_ylabel('KCs (Mean±Std)')
     axes[0].set_title('KCs by Degree', fontweight='bold'); axes[0].legend(fontsize=8); axes[0].grid(alpha=0.3)
     axes[1].set_xlabel('Degree ()'); axes[1].set_ylabel('CV')
@@ -533,7 +606,7 @@ def plot_effect_size_adjacent(all_df, marker_list, output_path):
                 if len(g1) < 2 or len(g2) < 2: dv.append(np.nan); continue
                 ps = np.sqrt(((len(g1)-1)*g1.std()**2 + (len(g2)-1)*g2.std()**2)/(len(g1)+len(g2)-2))
                 dv.append(abs(g1.mean()-g2.mean())/ps if ps > 0 else np.nan)
-            ax.plot(range(len(adj_pairs)), dv, 'o-', color=MARKER_COLORS.get(ms,'gray'), label=ms, linewidth=2, markersize=8)
+            ax.plot(range(len(adj_pairs)), dv, 'o-', color=MARKER_COLORS.get(ms,'gray'), label=marker_display(ms), linewidth=2, markersize=8)
         ax.set_xticks(range(len(adj_pairs)))
         ax.set_xticklabels([f'{a}v{b}' for a,b in adj_pairs], fontsize=10)
         ax.set_xlabel('Adjacent Degrees ()'); ax.set_ylabel("Cohen's d")
@@ -749,8 +822,8 @@ def step5_evaluate(args, gt_df=None):
             plot_marker_comparison_overlay(all_df, nfs_marker_list, m, DC/f"marker_overlay_{m}_nfs_only.png", title_suffix='NFS only')
 
     pair_specs = [
-        (['NFS_12K', 'Kintelligence'], '12K vs Kintelligence', '12k_vs_kintelligence'),
-        (['NFS_6K', 'QIAseq'], '6K vs QIAseq', '6k_vs_qiaseq'),
+        (['NFS_12K', 'Kintelligence'], 'NFSKIN_12K vs Kintelligence', '12k_vs_kintelligence'),
+        (['NFS_6K', 'QIAseq'], 'NFSKIN_6K vs QIAseq', '6k_vs_qiaseq'),
     ]
     for pair_markers, pair_title, pair_tag in pair_specs:
         available = [ms for ms in pair_markers if ms in marker_list]
