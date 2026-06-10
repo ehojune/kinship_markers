@@ -21,6 +21,8 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 import seaborn as sns
 from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix
 import warnings
@@ -28,6 +30,15 @@ warnings.filterwarnings('ignore')
 
 plt.rcParams.update({'axes.unicode_minus':False,'figure.dpi':150,
                      'figure.facecolor':'white','font.family':'DejaVu Sans'})
+
+# Final manuscript figures must not render chart titles.
+def _disable_plot_titles():
+    def _noop_title(self, *args, **kwargs):
+        return None
+    Axes.set_title = _noop_title
+    Figure.suptitle = _noop_title
+
+_disable_plot_titles()
 
 METRICS = ['IBS','IBD','Kinship']
 
@@ -40,14 +51,14 @@ COMBINED_CSV_NAME = 'all_results_combined.csv'
 COMPARISON_MARKERS = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K', 'Kintelligence', 'QIAseq']
 
 RELATIONSHIP_TO_DEGREE = {
-    'Unrelated':0,'Spouse':0,'Parent-Child':1,
+    'Unrelated':0,'Spouse':0,'In-Law':0,'InLaw':0,'Inlaw':0,'Spouse/InLaw':0,'Between-Fam':0,'Parent-Child':1,
     'Sibling':2,'Grandparent-Grandchild':2,'Half-Sibling':2,
     'Uncle-Nephew':3,'Great-Grandparent':3,
     'Cousin':4,'Grand-Uncle-Nephew':4,
     'Cousin-Once-Removed':5,'Second-Cousin':6,
 }
 RELATIONSHIP_TO_GROUP = {
-    'Unrelated':'G0_Unrelated','Spouse':'G0_Unrelated',
+    'Unrelated':'G0_Unrelated','Spouse':'G0_Unrelated','In-Law':'G0_Unrelated','InLaw':'G0_Unrelated','Inlaw':'G0_Unrelated','Spouse/InLaw':'G0_Unrelated','Between-Fam':'G0_Unrelated',
     'Parent-Child':'G1_1st',
     'Sibling':'G2a_Sib','Half-Sibling':'G2a_Sib',
     'Grandparent-Grandchild':'G2b_GPGC',
@@ -55,17 +66,18 @@ RELATIONSHIP_TO_GROUP = {
     'Cousin':'G4_4th','Grand-Uncle-Nephew':'G4_4th',
     'Cousin-Once-Removed':'G5_5th','Second-Cousin':'G6_6th',
 }
-GROUP_ORDER = ['G0_Unrelated','G1_1st','G2a_Sib','G2b_GPGC',
-               'G3_3rd','G4_4th','G5_5th','G6_6th']
+GROUP_ORDER = ['G1_1st','G2a_Sib','G3_3rd','G2b_GPGC',
+               'G4_4th','G5_5th','G6_6th','G0_Unrelated']
+THRESHOLD_PLOT_ORDER = list(reversed(GROUP_ORDER))
 GROUP_DISPLAY = {
-    'G0_Unrelated':'Unrelated','G1_1st':'1st degree',
-    'G2a_Sib':'2nd (Sibling)','G2b_GPGC':'2nd (GP-GC)',
-    'G3_3rd':'3rd degree','G4_4th':'4th degree',
-    'G5_5th':'5th degree','G6_6th':'6th degree',
+    'G0_Unrelated':'unrelated','G1_1st':'1st',
+    'G2a_Sib':'2nd(sibling)','G2b_GPGC':'2nd(GP-GC)',
+    'G3_3rd':'3rd','G4_4th':'4th',
+    'G5_5th':'5th','G6_6th':'6th',
 }
 GROUP_DISPLAY_SHORT = {
-    'G0_Unrelated':'Unrel','G1_1st':'1st',
-    'G2a_Sib':'2nd-Sib','G2b_GPGC':'2nd-GPGC',
+    'G0_Unrelated':'unrelated','G1_1st':'1st',
+    'G2a_Sib':'2nd(sibling)','G2b_GPGC':'2nd(GP-GC)',
     'G3_3rd':'3rd','G4_4th':'4th','G5_5th':'5th','G6_6th':'6th',
 }
 GROUP_TO_DEGREE = {
@@ -104,10 +116,10 @@ PLOT_MARKER_ORDER_NFS_ONLY = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K']
 PAIRWISE_MARKER_SETS = [('NFS_12K', 'Kintelligence'), ('NFS_6K', 'QIAseq')]
 
 MARKER_DISPLAY = {
-    'NFS_36K': 'NFS_36K',
-    'NFS_24K': 'NFS_24K',
-    'NFS_12K': 'NFS_12K',
-    'NFS_6K': 'NFS_6K',
+    'NFS_36K': 'NFSKIN_36K',
+    'NFS_24K': 'NFSKIN_24K',
+    'NFS_12K': 'NFSKIN_12K',
+    'NFS_6K': 'NFSKIN_6K',
     'Kintelligence': 'Kintelligence',
     'QIAseq': 'QIAseq',
 }
@@ -181,6 +193,16 @@ def _gs(g): return GROUP_DISPLAY_SHORT.get(g,g)
 # 0. Data Prep
 # ============================================================
 def fix_degree_labels(df):
+    df = df.copy()
+    df['Relationship'] = df['Relationship'].replace({
+        'Spouse': 'Unrelated',
+        'In-Law': 'Unrelated',
+        'InLaw': 'Unrelated',
+        'Inlaw': 'Unrelated',
+        'Spouse/InLaw': 'Unrelated',
+        'Between-Fam': 'Unrelated',
+    })
+    df.loc[df['Relationship'].str.contains('inlaw|in-law|spouse|between', case=False, na=False), 'Relationship'] = 'Unrelated'
     corrections = 0
     for rel, cdeg in RELATIONSHIP_TO_DEGREE.items():
         mask = (df['Relationship']==rel) & (df['Degree']!=cdeg)
@@ -336,7 +358,7 @@ def compute_group_accuracy(rdf,ml,metric):
     pc,gc,dc,w1 = f'Pred_{metric}',f'GroupCorrect_{metric}',f'DegCorrect_{metric}',f'DegWithin1_{metric}'
     for ms in ml:
         df=rdf[rdf['Marker_Set']==ms].dropna(subset=[pc])
-        for grp in sorted(df['Group'].unique()):
+        for grp in [g for g in GROUP_ORDER if g in df['Group'].unique()]:
             s=df[df['Group']==grp]; n=len(s)
             rows.append(dict(Marker_Set=ms,Group=grp,Label=_gd(grp),
                 Degree=GROUP_TO_DEGREE.get(grp,-1),N=n,Correct=int(s[gc].sum()),
@@ -350,11 +372,11 @@ def compute_rel_accuracy(rdf,ml,metric):
     pc,gc,dc = f'Pred_{metric}',f'GroupCorrect_{metric}',f'DegCorrect_{metric}'
     for ms in ml:
         df=rdf[rdf['Marker_Set']==ms].dropna(subset=[pc])
-        for rel in df['Relationship'].unique():
-            s=df[df['Relationship']==rel]; n=len(s)
+        for grp in [g for g in GROUP_ORDER if g in df['Group'].unique()]:
+            s=df[df['Group']==grp]; n=len(s)
             pm=s[pc].mode()
-            rows.append(dict(Marker_Set=ms,Relationship=rel,
-                True_Degree=int(s['Degree'].iloc[0]),True_Group=s['Group'].iloc[0],N=n,
+            rows.append(dict(Marker_Set=ms,Relationship=_gd(grp),
+                True_Degree=GROUP_TO_DEGREE.get(grp,-1),True_Group=grp,N=n,
                 GroupAcc=s[gc].sum()/n*100 if n else 0,
                 DegreeAcc=s[dc].sum()/n*100 if n else 0,
                 MostPredGroup=pm.iloc[0] if len(pm) else '?'))
@@ -520,7 +542,7 @@ def plot_accuracy_heatmap_group(gadf, markers, metric, path, variant):
     )
     ax.set_xticklabels([_gd(g) for g in groups], rotation=25, ha='right', fontsize=9)
     ax.set_yticklabels([marker_display(m) for m in markers], rotation=0, fontsize=11)
-    ax.set_xlabel('Classification group')
+    ax.set_xlabel('Degree')
     ax.set_ylabel('Marker set')
     ax.set_title(f'[{metric_display(metric)}] Group accuracy heatmap ({variant_label(variant)})',
                  fontsize=13, fontweight='bold')
@@ -532,20 +554,17 @@ def plot_accuracy_heatmap_group(gadf, markers, metric, path, variant):
 def plot_accuracy_by_relationship(radf, markers, metric, path, variant):
     if not markers:
         return
-    df = radf[(radf['True_Degree'] > 0) & (radf['Marker_Set'].isin(markers))].copy()
+    df = radf[radf['Marker_Set'].isin(markers)].copy()
     if len(df) == 0:
         return
-    rel_order = ['Parent-Child', 'Sibling', 'Grandparent-Grandchild', 'Uncle-Nephew',
-                 'Great-Grandparent', 'Cousin', 'Grand-Uncle-Nephew', 'Cousin-Once-Removed',
-                 'Second-Cousin']
-    rels = [r for r in rel_order if r in df['Relationship'].values]
-    fig, ax = plt.subplots(figsize=(max(14, len(rels) * 2), 7))
+    groups = [g for g in GROUP_ORDER if g in df['True_Group'].values]
+    fig, ax = plt.subplots(figsize=(max(14, len(groups) * 1.8), 7))
     nm = len(markers)
     bw = 0.8 / nm
-    x = np.arange(len(rels))
+    x = np.arange(len(groups))
     for i, ms in enumerate(markers):
-        sub = df[df['Marker_Set'] == ms].set_index('Relationship')
-        vals = [sub.loc[r, 'GroupAcc'] if r in sub.index else 0 for r in rels]
+        sub = df[df['Marker_Set'] == ms].set_index('True_Group')
+        vals = [sub.loc[g, 'GroupAcc'] if g in sub.index else 0 for g in groups]
         bars = ax.bar(x + (i - nm / 2 + .5) * bw, vals, bw, label=marker_display(ms),
                       color=MARKER_COLORS.get(ms, '#95a5a6'), edgecolor='white', linewidth=.3)
         for b in bars:
@@ -554,13 +573,12 @@ def plot_accuracy_by_relationship(radf, markers, metric, path, variant):
                 ax.annotate(f'{h:.0f}',
                             xy=(b.get_x() + b.get_width() / 2, h),
                             ha='center', va='bottom', fontsize=6, fontweight='bold', rotation=90)
-    grpmap = {r: df[df['Relationship'] == r]['True_Group'].iloc[0] for r in rels}
     ax.set_xticks(x)
-    ax.set_xticklabels([f'{r}\n({_gs(grpmap.get(r, ""))})' for r in rels],
-                       rotation=0, ha='center', fontsize=8)
+    ax.set_xticklabels([_gd(g) for g in groups], rotation=25, ha='right', fontsize=9)
+    ax.set_xlabel('Degree')
     ax.set_ylabel('Accuracy (%)')
     ax.set_ylim(0, 120)
-    ax.set_title(f'[{metric_display(metric)}] Relationship accuracy ({variant_label(variant)})',
+    ax.set_title(f'[{metric_display(metric)}] Empirical relationship accuracy ({variant_label(variant)})',
                  fontsize=13, fontweight='bold')
     ax.legend(fontsize=8, ncol=2, loc='upper right')
     ax.grid(axis='y', alpha=.3)
@@ -699,7 +717,7 @@ def plot_thresholds(cinfo, ms, metric, path):
         return
     bd = cinfo[ms][metric]['boundaries']
     gs = cinfo[ms][metric]['stats']
-    grps = [g for g in GROUP_ORDER if g in gs]
+    grps = [g for g in THRESHOLD_PLOT_ORDER if g in gs]
     fig, ax = plt.subplots(figsize=(10, max(5, len(grps) * 0.8)))
     for i, grp in enumerate(grps):
         s = gs[grp]
@@ -786,22 +804,20 @@ def plot_metric_comparison(rdf, markers, path, title_suffix=''):
 def plot_pairwise_relationship_accuracy(all_radf, marker_pair, path):
     markers = [normalize_marker_name(m) for m in marker_pair]
     rows = []
-    rel_order = ['Parent-Child', 'Sibling', 'Grandparent-Grandchild', 'Uncle-Nephew',
-                 'Great-Grandparent', 'Cousin', 'Grand-Uncle-Nephew', 'Cousin-Once-Removed',
-                 'Second-Cousin']
+    rel_order = GROUP_ORDER
     for metric in METRICS:
         radf = all_radf.get(metric)
         if radf is None or len(radf) == 0:
             continue
-        sub = radf[(radf['Marker_Set'].isin(markers)) & (radf['True_Degree'] > 0)].copy()
+        sub = radf[radf['Marker_Set'].isin(markers)].copy()
         if len(sub) == 0:
             continue
         for ms in markers:
-            marker_sub = sub[sub['Marker_Set'] == ms].set_index('Relationship')
+            marker_sub = sub[sub['Marker_Set'] == ms].set_index('True_Group')
             for rel in rel_order:
                 if rel in marker_sub.index:
                     rows.append(dict(
-                        Relationship=rel,
+                        Relationship=_gd(rel),
                         Column=f'{marker_display(ms)}\n{metric_display(metric)}',
                         GroupAcc=marker_sub.loc[rel, 'GroupAcc'],
                     ))
@@ -809,7 +825,7 @@ def plot_pairwise_relationship_accuracy(all_radf, marker_pair, path):
         return
     col_order = [f'{marker_display(ms)}\n{metric_display(metric)}' for ms in markers for metric in METRICS]
     pivot = pd.DataFrame(rows).pivot_table(index='Relationship', columns='Column', values='GroupAcc', aggfunc='first')
-    pivot = pivot.reindex(index=[r for r in rel_order if r in pivot.index], columns=col_order)
+    pivot = pivot.reindex(index=[_gd(r) for r in rel_order if _gd(r) in pivot.index], columns=col_order)
     fig, ax = plt.subplots(figsize=(max(10, len(col_order) * 1.5), max(6, len(pivot.index) * 0.8)))
     sns.heatmap(
         pivot,
@@ -825,8 +841,8 @@ def plot_pairwise_relationship_accuracy(all_radf, marker_pair, path):
         annot_kws={'fontsize': 9, 'fontweight': 'bold'},
     )
     ax.set_xlabel('Panel / metric')
-    ax.set_ylabel('Relationship')
-    ax.set_title(f'Pairwise relationship accuracy - {pairwise_label(markers)}',
+    ax.set_ylabel('Degree')
+    ax.set_title(f'Pairwise empirical relationship accuracy - {pairwise_label(markers)}',
                  fontsize=13, fontweight='bold')
     plt.tight_layout()
     plt.savefig(path, dpi=150, bbox_inches='tight', facecolor='white')

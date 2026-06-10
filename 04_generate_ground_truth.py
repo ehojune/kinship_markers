@@ -74,7 +74,7 @@ class FamilyTree:
         common_children = set(self.children.get(id1, [])) & set(self.children.get(id2, []))
         lcas = self.find_all_lcas(id1, id2)
         if not lcas:
-            return ("Spouse", 0, 0.0) if common_children else ("Unrelated", 0, 0.0)
+            return ("Unrelated", 0, 0.0)
         _, d1, d2 = lcas[0]
         n_paths = len(lcas)
         chon = d1 + d2
