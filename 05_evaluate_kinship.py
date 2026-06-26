@@ -37,6 +37,15 @@ plt.rcParams['figure.dpi'] = 150
 plt.rcParams['savefig.dpi'] = 150
 plt.rcParams['figure.facecolor'] = 'white'
 plt.rcParams['font.family'] = 'DejaVu Sans'
+plt.rcParams['font.size'] = 20
+plt.rcParams['font.weight'] = 'normal'
+plt.rcParams['axes.labelsize'] = 20
+plt.rcParams['axes.labelweight'] = 'normal'
+plt.rcParams['axes.titlesize'] = 20
+plt.rcParams['axes.titleweight'] = 'normal'
+plt.rcParams['xtick.labelsize'] = 20
+plt.rcParams['ytick.labelsize'] = 20
+plt.rcParams['legend.fontsize'] = 20
 
 # Final manuscript figures must not render chart titles.
 def _disable_plot_titles():
@@ -48,13 +57,13 @@ def _disable_plot_titles():
 _disable_plot_titles()
 
 MARKER_COLORS = {
-    'NFS_36K': '#1a5276', 'NFS_24K': '#2874a6',
-    'NFS_12K': '#e74c3c', 'NFS_6K': '#9b59b6',
-    'Kintelligence': '#27ae60', 'QIAseq': '#f39c12'
+    'NFS_6K': '#BCD7EA', 'NFS_12K': '#84B9DA',
+    'NFS_24K': '#4994C6', 'NFS_36K': '#2B6488',
+    'Kintelligence': '#42B874', 'QIAseq': '#D5B32B'
 }
 DEGREE_COLORS = {
-    0: '#95a5a6', 1: '#c0392b', 2: '#e74c3c', 3: '#e67e22',
-    4: '#f1c40f', 5: '#2ecc71', 6: '#3498db', 7: '#9b59b6'
+    0: '#97A3A4', 1: '#A8473E', 2: '#D25D51', 3: '#CE803B',
+    4: '#D5B32B', 5: '#42B874', 6: '#4994C6', 7: '#97A3A4'
 }
 EMPIRICAL_RELATIONSHIP_ORDER = [
     'G1_1st', 'G2a_Sib', 'G3_3rd', 'G2b_GPGC',
@@ -71,10 +80,10 @@ EMPIRICAL_RELATIONSHIP_LABELS = {
     'G0_Unrelated': 'unrelated',
 }
 EMPIRICAL_RELATIONSHIP_COLORS = {
-    'G1_1st': '#c0392b', 'G2a_Sib': '#e74c3c',
-    'G3_3rd': '#e67e22', 'G2b_GPGC': '#d35400',
-    'G4_4th': '#f39c12', 'G5_5th': '#2ecc71',
-    'G6_6th': '#3498db', 'G0_Unrelated': '#95a5a6',
+    'G1_1st': '#A8473E', 'G2a_Sib': '#D25D51',
+    'G3_3rd': '#CE803B', 'G2b_GPGC': '#D25D51',
+    'G4_4th': '#D5B32B', 'G5_5th': '#42B874',
+    'G6_6th': '#4994C6', 'G0_Unrelated': '#97A3A4',
 }
 RELATIONSHIP_TO_EMPIRICAL_GROUP = {
     'Parent-Child': 'G1_1st',
@@ -249,7 +258,7 @@ def plot_boxplot_by_relationship(all_df, marker_set, output_path):
     if not rel_order: return
     df['RL'] = df['Empirical_Relationship_Label']
     lo = [EMPIRICAL_RELATIONSHIP_LABELS[g] for g in rel_order]
-    pal = [EMPIRICAL_RELATIONSHIP_COLORS.get(g, '#95a5a6') for g in rel_order]
+    pal = [EMPIRICAL_RELATIONSHIP_COLORS.get(g, '#97A3A4') for g in rel_order]
     fig, axes = plt.subplots(1, 3, figsize=(22, 8))
     for ax, m in zip(axes, ['IBS', 'IBD', 'Kinship']):
         data = df.dropna(subset=[m])
@@ -276,7 +285,7 @@ def plot_violin_by_relationship(all_df, marker_set, output_path):
     if not rel_order: return
     df['RL'] = df['Empirical_Relationship_Label']
     lo = [EMPIRICAL_RELATIONSHIP_LABELS[g] for g in rel_order]
-    pal = [EMPIRICAL_RELATIONSHIP_COLORS.get(g, '#95a5a6') for g in rel_order]
+    pal = [EMPIRICAL_RELATIONSHIP_COLORS.get(g, '#97A3A4') for g in rel_order]
     fig, axes = plt.subplots(1, 3, figsize=(22, 8))
     for ax, m in zip(axes, ['IBS', 'IBD', 'Kinship']):
         data = df.dropna(subset=[m])
@@ -301,7 +310,7 @@ def plot_relationship_distribution_single(all_df, marker_set, metric, output_pat
         return
     df['RL'] = df['Empirical_Relationship_Label']
     lo = [EMPIRICAL_RELATIONSHIP_LABELS[g] for g in rel_order]
-    pal = [EMPIRICAL_RELATIONSHIP_COLORS.get(g, '#95a5a6') for g in rel_order]
+    pal = [EMPIRICAL_RELATIONSHIP_COLORS.get(g, '#97A3A4') for g in rel_order]
     data = df.dropna(subset=[metric])
     if len(data) == 0:
         return
@@ -343,7 +352,7 @@ def plot_heatmap_standard(all_df, marker_set, metric, output_path):
     vranges = {'IBS': (0.55, 0.85), 'IBD': (0, 0.6), 'Kinship': (-0.05, 0.3)}
     vmin, vmax = vranges.get(metric, (0, 1))
     mask = np.triu(np.ones_like(matrix, dtype=bool), k=1)
-    sns.heatmap(matrix, mask=mask, cmap='RdYlBu_r', vmin=vmin, vmax=vmax,
+    sns.heatmap(matrix, mask=mask, cmap='mako', vmin=vmin, vmax=vmax,
                 square=True, linewidths=0.2, linecolor='white',
                 cbar_kws={'shrink': 0.6, 'label': _md(metric)}, ax=ax)
     labels = [f"{s.split('-')[1]}-{s.split('-')[2]}" if len(s.split('-')) >= 3 else s for s in samples]
@@ -376,7 +385,7 @@ def plot_heatmap_within_family(all_df, marker_set, metric, family, output_path):
     vranges = {'IBS': (0.6, 0.85), 'IBD': (0, 0.55), 'Kinship': (-0.05, 0.3)}
     vmin, vmax = vranges.get(metric, (0, 1))
     mask = np.triu(np.ones_like(matrix, dtype=bool), k=1)
-    sns.heatmap(matrix, mask=mask, cmap='RdYlBu_r', vmin=vmin, vmax=vmax,
+    sns.heatmap(matrix, mask=mask, cmap='mako', vmin=vmin, vmax=vmax,
                 square=True, linewidths=0.5, linecolor='white',
                 annot=True, fmt='.3f', annot_kws={'size': 9},
                 cbar_kws={'shrink': 0.7, 'label': _md(metric)}, ax=ax)
@@ -473,7 +482,7 @@ def plot_auc_heatmap(roc_results, metric, marker_list, output_path):
     pivot = pivot.apply(pd.to_numeric, errors='coerce')
     if pivot.isna().all().all(): return
     fig, ax = plt.subplots(figsize=(18, max(5, len(mo) * 1.15 + 2)))
-    sns.heatmap(pivot, annot=True, fmt='.3f', cmap='RdYlGn', vmin=0.5, vmax=1.0,
+    sns.heatmap(pivot, annot=True, fmt='.3f', cmap='mako', vmin=0.5, vmax=1.0,
                 ax=ax, linewidths=0.5, cbar_kws={'label':'AUC','shrink':0.8}, annot_kws={'size':9})
     ax.set_title(f'{_md(metric)} - AUC by Scenario', fontsize=14, fontweight='bold')
     ax.set_xlabel('Scenario'); ax.set_ylabel('Marker Set')
@@ -510,7 +519,7 @@ def plot_scatter_expected_vs_observed(all_df, marker_set, output_path):
         data = df.dropna(subset=[m])
         for deg in sorted(data['Degree'].unique()):
             dd = data[data['Degree']==deg]
-            ax.scatter(dd['Expected_Kinship'], dd[m], c=DEGREE_COLORS.get(deg,'#95a5a6'),
+            ax.scatter(dd['Expected_Kinship'], dd[m], c=DEGREE_COLORS.get(deg,'#97A3A4'),
                        label=f"{deg}" if deg>0 else "Unrel", alpha=0.6, s=30, edgecolors='white', linewidth=0.3)
         valid = data[['Expected_Kinship', m]].dropna()
         if len(valid) > 2:
@@ -639,7 +648,7 @@ def plot_confusion_matrices(all_df, roc_results, marker_list, output_path):
         yt = df['Is_Related'].astype(int).values
         yp = (df[metric] >= th).astype(int).values
         cm = confusion_matrix(yt, yp)
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax,
+        sns.heatmap(cm, annot=True, fmt='d', cmap='mako', ax=ax,
                     xticklabels=['Pred\nUnrel','Pred\nRel'], yticklabels=['Act\nUnrel','Act\nRel'])
         ax.set_title(f'{ms}\n(th={th:.4f})', fontsize=11, fontweight='bold')
     plt.suptitle(f'Confusion Matrix: Related vs Unrelated ({_md(metric)})', fontsize=14, fontweight='bold', y=1.05)

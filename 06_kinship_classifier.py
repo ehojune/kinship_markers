@@ -29,7 +29,12 @@ import warnings
 warnings.filterwarnings('ignore')
 
 plt.rcParams.update({'axes.unicode_minus':False,'figure.dpi':150,
-                     'figure.facecolor':'white','font.family':'DejaVu Sans'})
+                     'figure.facecolor':'white','font.family':'DejaVu Sans',
+                     'font.size':20,'font.weight':'normal',
+                     'axes.labelsize':20,'axes.labelweight':'normal',
+                     'axes.titlesize':20,'axes.titleweight':'normal',
+                     'xtick.labelsize':20,'ytick.labelsize':20,
+                     'legend.fontsize':20})
 
 # Final manuscript figures must not render chart titles.
 def _disable_plot_titles():
@@ -85,17 +90,17 @@ GROUP_TO_DEGREE = {
     'G3_3rd':3,'G4_4th':4,'G5_5th':5,'G6_6th':6
 }
 MARKER_COLORS = {
-    'NFS_36K':'#1a5276','NFS_24K':'#2874a6',
-    'NFS_12K':'#e74c3c','NFS_6K':'#9b59b6',
-    'Kintelligence':'#27ae60','QIAseq':'#f39c12'
+    'NFS_6K':'#BCD7EA','NFS_12K':'#84B9DA',
+    'NFS_24K':'#4994C6','NFS_36K':'#2B6488',
+    'Kintelligence':'#42B874','QIAseq':'#D5B32B'
 }
 GROUP_COLORS = {
-    'G0_Unrelated':'#bdc3c7','G1_1st':'#c0392b',
-    'G2a_Sib':'#e74c3c','G2b_GPGC':'#f39c12',
-    'G3_3rd':'#e67e22','G4_4th':'#f1c40f',
-    'G5_5th':'#2ecc71','G6_6th':'#3498db'
+    'G0_Unrelated':'#97A3A4','G1_1st':'#A8473E',
+    'G2a_Sib':'#D25D51','G2b_GPGC':'#D25D51',
+    'G3_3rd':'#CE803B','G4_4th':'#D5B32B',
+    'G5_5th':'#42B874','G6_6th':'#4994C6'
 }
-METRIC_COLORS = {'IBS':'#3498db','IBD':'#e74c3c','Kinship':'#2ecc71'}
+METRIC_COLORS = {'IBS':'#4994C6','IBD':'#D25D51','Kinship':'#42B874'}
 
 
 METRIC_DISPLAY = {'IBS': 'IBS', 'IBD': 'IBD', 'Kinship': 'KCs'}
@@ -498,7 +503,7 @@ def plot_accuracy_overall(rdf, markers, metric, fdir, variant):
         (axes[1], 'Related', 'Related only'),
     ]:
         vals = [summary.loc[summary['Marker_Set'] == ms, col].iloc[0] for ms in markers]
-        colors = [MARKER_COLORS.get(ms, '#95a5a6') for ms in markers]
+        colors = [MARKER_COLORS.get(ms, '#97A3A4') for ms in markers]
         bars = ax.bar(range(len(markers)), vals, color=colors, edgecolor='white')
         ax.set_xticks(range(len(markers)))
         ax.set_xticklabels([marker_display(m) for m in markers], rotation=45, ha='right', fontsize=10)
@@ -531,7 +536,7 @@ def plot_accuracy_heatmap_group(gadf, markers, metric, path, variant):
         pivot,
         annot=True,
         fmt='.1f',
-        cmap='RdYlGn',
+        cmap='mako',
         vmin=0,
         vmax=100,
         linewidths=.5,
@@ -566,7 +571,7 @@ def plot_accuracy_by_relationship(radf, markers, metric, path, variant):
         sub = df[df['Marker_Set'] == ms].set_index('True_Group')
         vals = [sub.loc[g, 'GroupAcc'] if g in sub.index else 0 for g in groups]
         bars = ax.bar(x + (i - nm / 2 + .5) * bw, vals, bw, label=marker_display(ms),
-                      color=MARKER_COLORS.get(ms, '#95a5a6'), edgecolor='white', linewidth=.3)
+                      color=MARKER_COLORS.get(ms, '#97A3A4'), edgecolor='white', linewidth=.3)
         for b in bars:
             h = b.get_height()
             if h > 0:
@@ -600,28 +605,36 @@ def plot_confusion_matrices(rdf, markers, metric, outdir):
         cm = confusion_matrix(yt, yp, labels=labels)
         cmn = cm.astype(float) / np.maximum(cm.sum(axis=1, keepdims=True), 1) * 100
         tl = [_gd(l) for l in labels]
-        fig, axes = plt.subplots(1, 2, figsize=(18, 7))
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes[0],
-                    xticklabels=tl, yticklabels=tl, linewidths=.5, linecolor='white')
-        axes[0].set_xlabel('Predicted')
-        axes[0].set_ylabel('True')
-        axes[0].set_title('Counts', fontweight='bold')
-        plt.setp(axes[0].get_xticklabels(), rotation=30, ha='right', fontsize=8)
-        plt.setp(axes[0].get_yticklabels(), rotation=0, fontsize=8)
-        sns.heatmap(cmn, annot=True, fmt='.1f', cmap='RdYlGn', vmin=0, vmax=100, ax=axes[1],
-                    xticklabels=tl, yticklabels=tl, linewidths=.5, linecolor='white')
-        axes[1].set_xlabel('Predicted')
-        axes[1].set_ylabel('True')
-        axes[1].set_title('Row-normalized (%)', fontweight='bold')
-        plt.setp(axes[1].get_xticklabels(), rotation=30, ha='right', fontsize=8)
-        plt.setp(axes[1].get_yticklabels(), rotation=0, fontsize=8)
-        plt.suptitle(f'[{metric_display(metric)}] Confusion matrix - {marker_display(ms)}',
-                     fontsize=14, fontweight='bold', y=1.02)
+
+        count_name = f"confusion_counts_{metric_filekey(metric)}_{marker_filekey(ms)}.png"
+        fig, ax = plt.subplots(figsize=(11, 10))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='mako', ax=ax,
+                    xticklabels=tl, yticklabels=tl, linewidths=.5, linecolor='white',
+                    annot_kws={'fontsize': 18, 'fontweight': 'normal'},
+                    cbar_kws={'label': 'Count'})
+        ax.set_xlabel('Predicted', fontsize=20, fontweight='normal')
+        ax.set_ylabel('True', fontsize=20, fontweight='normal')
+        plt.setp(ax.get_xticklabels(), rotation=30, ha='right', fontsize=18, fontweight='normal')
+        plt.setp(ax.get_yticklabels(), rotation=0, fontsize=18, fontweight='normal')
         plt.tight_layout()
-        out_name = f"confusion_{metric_filekey(metric)}_{marker_filekey(ms)}.png"
-        plt.savefig(outdir / out_name, dpi=150, bbox_inches='tight', facecolor='white')
+        plt.savefig(outdir / count_name, dpi=150, bbox_inches='tight', facecolor='white')
         plt.close()
-        print(f"    Saved: {out_name}")
+        print(f"    Saved: {count_name}")
+
+        norm_name = f"confusion_row_normalized_{metric_filekey(metric)}_{marker_filekey(ms)}.png"
+        fig, ax = plt.subplots(figsize=(11, 10))
+        sns.heatmap(cmn, annot=True, fmt='.1f', cmap='mako', vmin=0, vmax=100, ax=ax,
+                    xticklabels=tl, yticklabels=tl, linewidths=.5, linecolor='white',
+                    annot_kws={'fontsize': 18, 'fontweight': 'normal'},
+                    cbar_kws={'label': 'Row-normalized (%)'})
+        ax.set_xlabel('Predicted', fontsize=20, fontweight='normal')
+        ax.set_ylabel('True', fontsize=20, fontweight='normal')
+        plt.setp(ax.get_xticklabels(), rotation=30, ha='right', fontsize=18, fontweight='normal')
+        plt.setp(ax.get_yticklabels(), rotation=0, fontsize=18, fontweight='normal')
+        plt.tight_layout()
+        plt.savefig(outdir / norm_name, dpi=150, bbox_inches='tight', facecolor='white')
+        plt.close()
+        print(f"    Saved: {norm_name}")
 
 def plot_misclassification_summary(mcdf, markers, metric, path, variant):
     if len(mcdf) == 0 or not markers:
@@ -641,7 +654,7 @@ def plot_misclassification_summary(mcdf, markers, metric, path, variant):
         sub = pivot[pivot['Marker_Set'] == ms].set_index('True_Group')
         vals = [sub.loc[g, 'Errors'] if g in sub.index else 0 for g in groups]
         bars = ax.bar(x + (i - nm / 2 + .5) * bw, vals, bw, label=marker_display(ms),
-                      color=MARKER_COLORS.get(ms, '#95a5a6'), edgecolor='white', linewidth=.3)
+                      color=MARKER_COLORS.get(ms, '#97A3A4'), edgecolor='white', linewidth=.3)
         for b in bars:
             h = b.get_height()
             if h > 0:
@@ -692,9 +705,9 @@ def plot_forensic_scenarios(rdf, markers, metric, path, variant):
     x = np.arange(len(distant))
     w = 0.35
     b1 = ax.bar(x - w / 2, distant['Exact'], w, label='Exact',
-                color='#3498db', edgecolor='white')
+                color='#4994C6', edgecolor='white')
     b2 = ax.bar(x + w / 2, distant['Within1'], w, label='Within ±1',
-                color='#2ecc71', edgecolor='white')
+                color='#42B874', edgecolor='white')
     ax.set_xticks(x)
     ax.set_xticklabels([marker_display(m) for m in distant['Marker_Set']], rotation=45, ha='right')
     ax.set_ylabel('Accuracy (%)')
@@ -721,7 +734,7 @@ def plot_thresholds(cinfo, ms, metric, path):
     fig, ax = plt.subplots(figsize=(10, max(5, len(grps) * 0.8)))
     for i, grp in enumerate(grps):
         s = gs[grp]
-        c = GROUP_COLORS.get(grp, '#95a5a6')
+        c = GROUP_COLORS.get(grp, '#97A3A4')
         ax.barh(i, s['q75'] - s['q25'], left=s['q25'], height=.6,
                 color=c, alpha=.6, edgecolor='black', lw=.5)
         ax.plot(s['median'], i, 'k|', ms=15, mew=2)
@@ -831,7 +844,7 @@ def plot_pairwise_relationship_accuracy(all_radf, marker_pair, path):
         pivot,
         annot=True,
         fmt='.1f',
-        cmap='RdYlGn',
+        cmap='mako',
         vmin=0,
         vmax=100,
         linewidths=.5,
