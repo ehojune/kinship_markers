@@ -90,7 +90,7 @@ RELATIONSHIP_TO_EMPIRICAL_GROUP = {
 }
 
 COMPARISON_MARKERS = ['NFS_36K', 'NFS_24K', 'NFS_12K', 'NFS_6K', 'Kintelligence', 'QIAseq']
-DISPLAY_METRIC = {'IBS': 'IBS', 'IBD': 'IBD', 'Kinship': 'KCs'}
+DISPLAY_METRIC = {'IBS': 'IBS', 'IBD': 'IBD', 'Kinship': 'KC'}
 MARKER_DISPLAY = {
     'NFS_36K': 'NFSKIN_36K',
     'NFS_24K': 'NFSKIN_24K',
@@ -541,7 +541,7 @@ def plot_scatter_expected_vs_observed(all_df, marker_set, output_path):
         if m == 'Kinship':
             lims = [min(ax.get_xlim()[0], ax.get_ylim()[0]), max(ax.get_xlim()[1], ax.get_ylim()[1])]
             ax.plot(lims, lims, 'k--', alpha=0.5)
-        ax.set_xlabel('Expected KCs'); ax.set_ylabel(f'Observed {_md(m)}')
+        ax.set_xlabel('Expected KC'); ax.set_ylabel(f'Observed {_md(m)}')
         ax.set_title(f'{_md(m)}', fontsize=14, fontweight='bold')
         ax.legend(loc='lower right', fontsize=8, ncol=2); ax.grid(alpha=0.3)
     plt.suptitle(f'{marker_display(marker_set)} - Expected vs Observed', fontsize=16, fontweight='bold', y=1.02)
@@ -602,10 +602,10 @@ def generate_degree_summary_stats(all_df, marker_list, output_csv, output_plot):
         axes[0].errorbar(s['Degree'], s['Mean'], yerr=s['Std'], fmt='o-',
                          color=MARKER_COLORS.get(ms,'gray'), label=marker_display(ms), linewidth=1.5, capsize=3, markersize=6)
         axes[1].plot(s['Degree'], s['CV'], 'o-', color=MARKER_COLORS.get(ms,'gray'), label=marker_display(ms), linewidth=1.5, markersize=6)
-    axes[0].set_xlabel('Degree ()'); axes[0].set_ylabel('KCs (Mean±Std)')
-    axes[0].set_title('KCs by Degree', fontweight='bold'); axes[0].legend(fontsize=8); axes[0].grid(alpha=0.3)
+    axes[0].set_xlabel('Degree ()'); axes[0].set_ylabel('KC (Mean±Std)')
+    axes[0].set_title('KC by Degree', fontweight='bold'); axes[0].legend(fontsize=8); axes[0].grid(alpha=0.3)
     axes[1].set_xlabel('Degree ()'); axes[1].set_ylabel('CV')
-    axes[1].set_title('KCs Variability', fontweight='bold'); axes[1].legend(fontsize=8); axes[1].grid(alpha=0.3)
+    axes[1].set_title('KC Variability', fontweight='bold'); axes[1].legend(fontsize=8); axes[1].grid(alpha=0.3)
     plt.suptitle('Per-Degree Summary', fontsize=15, fontweight='bold', y=1.02)
     plt.tight_layout(); plt.savefig(output_plot, dpi=150, bbox_inches='tight', facecolor='white'); plt.close()
     print(f"    Saved: {output_plot.name}")
@@ -699,7 +699,7 @@ def generate_report(all_df, roc_results, marker_list, report_path):
             sdata = roc_results[roc_results['Scenario']==sn]
             if len(sdata) == 0: continue
             desc = sdata['Description'].iloc[0]
-            f.write(f"\n  [{desc}]\n  {'Marker':<15} {'IBS':>10} {'IBD':>10} {'KCs':>10}\n  " + "-"*50 + "\n")
+            f.write(f"\n  [{desc}]\n  {'Marker':<15} {'IBS':>10} {'IBD':>10} {'KC':>10}\n  " + "-"*50 + "\n")
             for mk in marker_list:
                 vals = {}
                 for m in ['IBS','IBD','Kinship']:
@@ -708,7 +708,7 @@ def generate_report(all_df, roc_results, marker_list, report_path):
                 f.write(f"  {mk:<15} {vals['IBS']:>10} {vals['IBD']:>10} {vals['Kinship']:>10}\n")
         f.write("\n\n5. OPTIMAL THRESHOLDS (Youden's J)\n" + "-"*80 + "\n")
         td = roc_results[roc_results['Scenario']=='related_vs_unrelated']
-        f.write(f"\n  [Related vs Unrelated]\n  {'Marker':<15} {'IBS':>12} {'IBD':>12} {'KCs':>12}\n  " + "-"*55 + "\n")
+        f.write(f"\n  [Related vs Unrelated]\n  {'Marker':<15} {'IBS':>12} {'IBD':>12} {'KC':>12}\n  " + "-"*55 + "\n")
         for mk in marker_list:
             vals = {}
             for m in ['IBS','IBD','Kinship']:
@@ -880,7 +880,7 @@ def step5_evaluate(args, gt_df=None):
     print("SUMMARY: Related vs Unrelated (AUC)")
     print("=" * 70)
     sdf = roc_results[roc_results['Scenario']=='related_vs_unrelated']
-    print(f"\n{'Marker':<15} {'IBS':>10} {'IBD':>10} {'KCs':>10}")
+    print(f"\n{'Marker':<15} {'IBS':>10} {'IBD':>10} {'KC':>10}")
     print("-" * 50)
     for mk in marker_list:
         md = sdf[sdf['Marker_Set']==mk]

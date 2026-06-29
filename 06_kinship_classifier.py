@@ -98,8 +98,8 @@ GROUP_COLORS = {
 METRIC_COLORS = {'IBS':'#4994C6','IBD':'#D25D51','Kinship':'#42B874'}
 
 
-METRIC_DISPLAY = {'IBS': 'IBS', 'IBD': 'IBD', 'Kinship': 'KCs'}
-METRIC_FILEKEY = {'IBS': 'IBS', 'IBD': 'IBD', 'Kinship': 'KCs'}
+METRIC_DISPLAY = {'IBS': 'IBS', 'IBD': 'IBD', 'Kinship': 'KC'}
+METRIC_FILEKEY = {'IBS': 'IBS', 'IBD': 'IBD', 'Kinship': 'KC'}
 
 MARKER_ALIASES = {
     'Kintellignece': 'Kintelligence',
@@ -876,7 +876,7 @@ def generate_report(rdf, all_gadf, all_radf, all_mcdf, cinfo, mlist, rpath):
     with open(rpath, 'w', encoding='utf-8') as f:
         f.write("=" * 100 + "\nKINSHIP CLASSIFIER - EVALUATION REPORT (v8)\n" + "=" * 100 + "\n\n")
         f.write("METHOD\n" + "-" * 80 + "\n")
-        f.write("  Per-metric classification (IBS, IBD, KCs independently)\n")
+        f.write("  Per-metric classification (IBS, IBD, KC independently)\n")
         f.write("  ROC-based thresholds: Youden's J (argmax TPR-FPR) per adjacent group pair\n")
         f.write("  2nd degree split: Sibling vs GP-GC\n")
         f.write("  Grand-Uncle-Nephew = 4th degree\n\n")
