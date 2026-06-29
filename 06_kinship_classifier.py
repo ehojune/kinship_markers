@@ -665,7 +665,7 @@ def plot_confusion_triplets_row_normalized(rdf, markers, outdir):
         if not labels:
             continue
         tl = [_gd(l) for l in labels]
-        ytl = [_gdr(l) for l in labels]
+        ytl = tl
 
         fig, axes = plt.subplots(1, 3, figsize=(30, 9), sharey=False)
         cbar_ax = fig.add_axes([0.92, 0.18, 0.015, 0.66])
