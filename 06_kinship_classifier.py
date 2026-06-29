@@ -679,7 +679,7 @@ def plot_confusion_triplets_row_normalized(rdf, markers, outdir):
                         cbar=(idx == 2), cbar_ax=cbar_ax if idx == 2 else None,
                         cbar_kws={'label': 'Row-normalized (%)'} if idx == 2 else None)
             ax.set_xlabel('Predicted', fontsize=18, fontweight='normal')
-            ax.set_ylabel('True' if idx == 0 else '', fontsize=18, fontweight='normal')
+            ax.set_ylabel('True', fontsize=18, fontweight='normal')
             ax.text(0.5, 1.02, metric_display(metric), transform=ax.transAxes,
                     ha='center', va='bottom', fontsize=20, fontweight='normal')
             plt.setp(ax.get_xticklabels(), rotation=30, ha='right', fontsize=14, fontweight='normal')
