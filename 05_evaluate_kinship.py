@@ -37,15 +37,6 @@ plt.rcParams['figure.dpi'] = 150
 plt.rcParams['savefig.dpi'] = 150
 plt.rcParams['figure.facecolor'] = 'white'
 plt.rcParams['font.family'] = 'DejaVu Sans'
-plt.rcParams['font.size'] = 20
-plt.rcParams['font.weight'] = 'normal'
-plt.rcParams['axes.labelsize'] = 20
-plt.rcParams['axes.labelweight'] = 'normal'
-plt.rcParams['axes.titlesize'] = 20
-plt.rcParams['axes.titleweight'] = 'normal'
-plt.rcParams['xtick.labelsize'] = 20
-plt.rcParams['ytick.labelsize'] = 20
-plt.rcParams['legend.fontsize'] = 20
 
 # Final manuscript figures must not render chart titles.
 def _disable_plot_titles():
@@ -215,6 +206,25 @@ def merge_results(ground_truth, marker_set, results_dir):
 # ============================================================
 # Plotting Functions
 # ============================================================
+def _exclude_boxplot_outliers(data, x_col, y_col, order):
+    """Return rows whose y values are not rendered as Tukey boxplot fliers."""
+    keep_masks = []
+    for group in order:
+        group_values = data.loc[data[x_col] == group, y_col]
+        if group_values.empty:
+            continue
+        q1 = group_values.quantile(0.25)
+        q3 = group_values.quantile(0.75)
+        iqr = q3 - q1
+        lower = q1 - 1.5 * iqr
+        upper = q3 + 1.5 * iqr
+        keep_masks.append(
+            (data[x_col] == group) & data[y_col].between(lower, upper, inclusive='both')
+        )
+    if not keep_masks:
+        return data.iloc[0:0]
+    return data[np.logical_or.reduce(keep_masks)]
+
 def plot_boxplot_by_degree_all(all_df, marker_set, output_path):
     df = all_df[all_df['Marker_Set'] == marker_set].copy()
     if len(df) == 0: return
@@ -237,7 +247,8 @@ def plot_boxplot_by_degree_all(all_df, marker_set, output_path):
             ax.set_title(f'{m} (No Data)'); continue
         sns.boxplot(data=data, x='DL', y=m, order=avail, palette=pal, ax=ax,
                     width=0.6, linewidth=1.5, flierprops={'marker':'o','markersize':3,'alpha':0.3})
-        sns.stripplot(data=data, x='DL', y=m, order=avail, color='black', size=2, alpha=0.3, ax=ax, jitter=True)
+        strip_data = _exclude_boxplot_outliers(data, 'DL', m, avail)
+        sns.stripplot(data=strip_data, x='DL', y=m, order=avail, color='black', size=2, alpha=0.3, ax=ax, jitter=True)
         for i, deg in enumerate(avail):
             n = len(data[data['DL'] == deg])
             ymin = data[m].min() - (data[m].max() - data[m].min()) * 0.1
@@ -264,7 +275,8 @@ def plot_boxplot_by_relationship(all_df, marker_set, output_path):
         data = df.dropna(subset=[m])
         if len(data) == 0: continue
         sns.boxplot(data=data, x='RL', y=m, order=lo, palette=pal, ax=ax, width=0.6, linewidth=1.5)
-        sns.stripplot(data=data, x='RL', y=m, order=lo, color='black', size=2, alpha=0.3, ax=ax, jitter=True)
+        strip_data = _exclude_boxplot_outliers(data, 'RL', m, lo)
+        sns.stripplot(data=strip_data, x='RL', y=m, order=lo, color='black', size=2, alpha=0.3, ax=ax, jitter=True)
         for i, label in enumerate(lo):
             n = len(data[data['RL'] == label])
             ymin = data[m].min() - (data[m].max() - data[m].min()) * 0.08
@@ -318,7 +330,8 @@ def plot_relationship_distribution_single(all_df, marker_set, metric, output_pat
     fig, ax = plt.subplots(figsize=(max(10, len(lo) * 1.15), 6))
     if kind == 'box':
         sns.boxplot(data=data, x='RL', y=metric, order=lo, palette=pal, ax=ax, width=0.6, linewidth=1.5)
-        sns.stripplot(data=data, x='RL', y=metric, order=lo, color='black', size=2, alpha=0.3, ax=ax, jitter=True)
+        strip_data = _exclude_boxplot_outliers(data, 'RL', metric, lo)
+        sns.stripplot(data=strip_data, x='RL', y=metric, order=lo, color='black', size=2, alpha=0.3, ax=ax, jitter=True)
     else:
         sns.violinplot(data=data, x='RL', y=metric, order=lo, palette=pal, ax=ax, inner='box', linewidth=1)
     ax.set_xlabel('Degree', fontsize=12)

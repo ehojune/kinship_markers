@@ -29,12 +29,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 plt.rcParams.update({'axes.unicode_minus':False,'figure.dpi':150,
-                     'figure.facecolor':'white','font.family':'DejaVu Sans',
-                     'font.size':20,'font.weight':'normal',
-                     'axes.labelsize':20,'axes.labelweight':'normal',
-                     'axes.titlesize':20,'axes.titleweight':'normal',
-                     'xtick.labelsize':20,'ytick.labelsize':20,
-                     'legend.fontsize':20})
+                     'figure.facecolor':'white','font.family':'DejaVu Sans'})
 
 # Final manuscript figures must not render chart titles.
 def _disable_plot_titles():
