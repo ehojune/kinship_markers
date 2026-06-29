@@ -685,7 +685,7 @@ def plot_confusion_triplets_row_normalized(rdf, markers, outdir):
                 rendered = True
 
             sns.heatmap(cmn, annot=annot, fmt='', cmap='mako', vmin=0, vmax=100, ax=ax,
-                        xticklabels=tl, yticklabels=ytl,
+                        xticklabels=tl, yticklabels=ytl if idx == 0 else False,
                         linewidths=.5, linecolor='white',
                         annot_kws={'fontsize': 14, 'fontweight': 'normal'},
                         cbar=(idx == 2), cbar_ax=cbar_ax if idx == 2 else None,
@@ -700,7 +700,7 @@ def plot_confusion_triplets_row_normalized(rdf, markers, outdir):
         if not rendered:
             plt.close()
             continue
-        fig.subplots_adjust(left=0.10, right=0.90, bottom=0.16, top=0.88, wspace=0.30)
+        fig.subplots_adjust(left=0.12, right=0.90, bottom=0.16, top=0.88, wspace=0.08)
         triplet_name = f"confusion_row_normalized_triplet_{marker_filekey(ms)}.png"
         plt.savefig(outdir / triplet_name, dpi=150, bbox_inches='tight', facecolor='white')
         plt.close()
