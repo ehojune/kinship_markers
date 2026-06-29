@@ -80,6 +80,16 @@ GROUP_DISPLAY_SHORT = {
     'G2a_Sib':'2nd(sibling)','G2b_GPGC':'2nd(GP-GC)',
     'G3_3rd':'3rd','G4_4th':'4th','G5_5th':'5th','G6_6th':'6th',
 }
+GROUP_DISPLAY_WITH_RELATIONSHIP = {
+    'G0_Unrelated':'unrelated\n(Unrelated)',
+    'G1_1st':'1st\n(Parent-Child)',
+    'G2a_Sib':'2nd(sibling)\n(Sibling/Half-Sibling)',
+    'G2b_GPGC':'2nd(GP-GC)\n(Grandparent-Grandchild)',
+    'G3_3rd':'3rd\n(Uncle-Nephew/Great-Grandparent)',
+    'G4_4th':'4th\n(Cousin/Grand-Uncle-Nephew)',
+    'G5_5th':'5th\n(Cousin-Once-Removed)',
+    'G6_6th':'6th\n(Second-Cousin)',
+}
 GROUP_TO_DEGREE = {
     'G0_Unrelated':0,'G1_1st':1,'G2a_Sib':2,'G2b_GPGC':2,
     'G3_3rd':3,'G4_4th':4,'G5_5th':5,'G6_6th':6
@@ -188,6 +198,7 @@ def pairwise_label(marker_pair):
 
 def _gd(g): return GROUP_DISPLAY.get(g,g)
 def _gs(g): return GROUP_DISPLAY_SHORT.get(g,g)
+def _gdr(g): return GROUP_DISPLAY_WITH_RELATIONSHIP.get(g,g)
 
 # ============================================================
 # 0. Data Prep
@@ -654,6 +665,7 @@ def plot_confusion_triplets_row_normalized(rdf, markers, outdir):
         if not labels:
             continue
         tl = [_gd(l) for l in labels]
+        ytl = [_gdr(l) for l in labels]
 
         fig, axes = plt.subplots(1, 3, figsize=(30, 9), sharey=True)
         cbar_ax = fig.add_axes([0.92, 0.18, 0.015, 0.66])
@@ -673,7 +685,7 @@ def plot_confusion_triplets_row_normalized(rdf, markers, outdir):
                 rendered = True
 
             sns.heatmap(cmn, annot=annot, fmt='', cmap='mako', vmin=0, vmax=100, ax=ax,
-                        xticklabels=tl, yticklabels=tl if idx == 0 else False,
+                        xticklabels=tl, yticklabels=ytl if idx == 0 else False,
                         linewidths=.5, linecolor='white',
                         annot_kws={'fontsize': 14, 'fontweight': 'normal'},
                         cbar=(idx == 2), cbar_ax=cbar_ax if idx == 2 else None,
@@ -688,7 +700,7 @@ def plot_confusion_triplets_row_normalized(rdf, markers, outdir):
         if not rendered:
             plt.close()
             continue
-        fig.subplots_adjust(left=0.06, right=0.90, bottom=0.16, top=0.88, wspace=0.08)
+        fig.subplots_adjust(left=0.12, right=0.90, bottom=0.16, top=0.88, wspace=0.08)
         triplet_name = f"confusion_row_normalized_triplet_{marker_filekey(ms)}.png"
         plt.savefig(outdir / triplet_name, dpi=150, bbox_inches='tight', facecolor='white')
         plt.close()
