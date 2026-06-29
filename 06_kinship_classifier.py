@@ -631,6 +631,69 @@ def plot_confusion_matrices(rdf, markers, metric, outdir):
         plt.close()
         print(f"    Saved: {norm_name}")
 
+def plot_confusion_triplets_row_normalized(rdf, markers, outdir):
+    """Save one row-normalized confusion-matrix triplet per marker.
+
+    The triplet places IBS, IBD, and KC side-by-side with a single shared
+    percentage colorbar on the far right, while keeping the existing
+    per-metric confusion plots unchanged.
+    """
+    metrics = ['IBS', 'IBD', 'Kinship']
+    for ms in markers:
+        marker_df = rdf[rdf['Marker_Set'] == ms]
+        if len(marker_df) == 0:
+            continue
+
+        observed = set(marker_df['Group'].dropna().astype(str))
+        predicted = set()
+        for metric in metrics:
+            pc = f'Pred_{metric}'
+            if pc in marker_df.columns:
+                predicted.update(marker_df[pc].dropna().astype(str))
+        labels = [g for g in GROUP_ORDER if g in observed | predicted]
+        if not labels:
+            continue
+        tl = [_gd(l) for l in labels]
+
+        fig, axes = plt.subplots(1, 3, figsize=(30, 9), sharey=True)
+        cbar_ax = fig.add_axes([0.92, 0.18, 0.015, 0.66])
+        rendered = False
+        for idx, (ax, metric) in enumerate(zip(axes, metrics)):
+            pc = f'Pred_{metric}'
+            df = marker_df.dropna(subset=[pc]) if pc in marker_df.columns else marker_df.iloc[0:0]
+            if len(df) == 0:
+                cmn = np.zeros((len(labels), len(labels)))
+                annot = np.full((len(labels), len(labels)), '', dtype=object)
+            else:
+                yt = df['Group'].astype(str)
+                yp = df[pc].astype(str)
+                cm = confusion_matrix(yt, yp, labels=labels)
+                cmn = cm.astype(float) / np.maximum(cm.sum(axis=1, keepdims=True), 1) * 100
+                annot = np.vectorize(lambda v: f'{v:.1f}')(cmn)
+                rendered = True
+
+            sns.heatmap(cmn, annot=annot, fmt='', cmap='mako', vmin=0, vmax=100, ax=ax,
+                        xticklabels=tl, yticklabels=tl if idx == 0 else False,
+                        linewidths=.5, linecolor='white',
+                        annot_kws={'fontsize': 14, 'fontweight': 'normal'},
+                        cbar=(idx == 2), cbar_ax=cbar_ax if idx == 2 else None,
+                        cbar_kws={'label': 'Row-normalized (%)'} if idx == 2 else None)
+            ax.set_xlabel('Predicted', fontsize=18, fontweight='normal')
+            ax.set_ylabel('True', fontsize=18, fontweight='normal')
+            ax.text(0.5, 1.02, metric_display(metric), transform=ax.transAxes,
+                    ha='center', va='bottom', fontsize=20, fontweight='normal')
+            plt.setp(ax.get_xticklabels(), rotation=30, ha='right', fontsize=14, fontweight='normal')
+            plt.setp(ax.get_yticklabels(), rotation=0, fontsize=14, fontweight='normal')
+
+        if not rendered:
+            plt.close()
+            continue
+        fig.subplots_adjust(left=0.06, right=0.90, bottom=0.16, top=0.88, wspace=0.08)
+        triplet_name = f"confusion_row_normalized_triplet_{marker_filekey(ms)}.png"
+        plt.savefig(outdir / triplet_name, dpi=150, bbox_inches='tight', facecolor='white')
+        plt.close()
+        print(f"    Saved: {triplet_name}")
+
 def plot_misclassification_summary(mcdf, markers, metric, path, variant):
     if len(mcdf) == 0 or not markers:
         print("    No misclassifications.")
@@ -1093,6 +1156,8 @@ def main():
                 variant,
             )
         plot_confusion_matrices(rdf, single_marker_plots, metric, fdir)
+        if metric == METRICS[-1]:
+            plot_confusion_triplets_row_normalized(rdf, single_marker_plots, fdir)
         for ms in single_marker_plots:
             plot_thresholds(
                 cinfo,
